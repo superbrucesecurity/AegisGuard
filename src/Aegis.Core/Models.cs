@@ -73,6 +73,9 @@ public sealed class RuleMatch
     public string Name { get; set; } = string.Empty;
     public Severity Severity { get; set; }
     public List<string> Evidence { get; set; } = [];
+
+    /// <summary>Analizador que produjo la evidencia: yara, pe, archive, script o macro.</summary>
+    public string Category { get; set; } = "yara";
 }
 
 public sealed class LocalAssessment
@@ -89,6 +92,9 @@ public sealed class ScoreContribution
     public string Source { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public double Weight { get; set; }
+
+    /// <summary>Evidence verificable mostrada en Reasons (ids de regla, hashes, etc.).</summary>
+    public string Evidence { get; set; } = string.Empty;
 }
 
 public sealed class DecisionResult

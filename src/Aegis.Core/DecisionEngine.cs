@@ -18,7 +18,10 @@ public sealed class DecisionEngine
         var risk = Math.Clamp(local.Score, 0, 100);
         var reasons = new List<string>();
         foreach (var c in local.Contributions.OrderByDescending(x => x.Weight).Take(4))
-            reasons.Add($"{c.Source}: {c.Reason} (+{c.Weight:0})");
+        {
+            var evidence = string.IsNullOrWhiteSpace(c.Evidence) ? string.Empty : $" [{c.Evidence}]";
+            reasons.Add($"{c.Source}: {c.Reason}{evidence} (+{c.Weight:0})");
+        }
 
         var confidence = Math.Clamp(0.55 + local.EvidenceCount * 0.09, 0.55, 0.96);
         var verdict = VerdictFromRisk(risk, policy);
@@ -49,17 +52,24 @@ public sealed class DecisionEngine
     public LocalAssessment Assess(Observation observation, IReadOnlyList<RuleMatch> ruleMatches, IReadOnlySet<string> maliciousHashes)
     {
         var assessment = new LocalAssessment();
-        void Add(string source, string reason, double weight, bool critical = false, bool verified = false)
+        void Add(string source, string reason, double weight, bool critical = false, bool verified = false, string evidence = "")
         {
             assessment.Score += weight;
             assessment.EvidenceCount++;
-            assessment.Contributions.Add(new ScoreContribution { Source = source, Reason = reason, Weight = weight });
+            assessment.Contributions.Add(new ScoreContribution
+            {
+                Source = source,
+                Reason = reason,
+                Weight = weight,
+                Evidence = evidence
+            });
             if (critical) assessment.HasCriticalIndicator = true;
             if (verified) assessment.HasVerifiedIndicator = true;
         }
 
         if (!string.IsNullOrWhiteSpace(observation.Sha256) && maliciousHashes.Contains(observation.Sha256))
-            Add("hash", "Hash en lista de denegación", 100, critical: true, verified: true);
+            Add("hash", "Hash en lista de denegación", 100, critical: true, verified: true,
+                evidence: observation.Sha256);
 
         // Una misma regla puede llegar desde el watcher y desde el escáner;
         // contarla dos veces inflaría el riesgo hasta una cuarentena espuria.
@@ -73,7 +83,10 @@ public sealed class DecisionEngine
                 Severity.Low => 9,
                 _ => 2
             };
-            Add("yara", $"{rule.RuleId}: {rule.Name}", weight, rule.Severity == Severity.Critical, IsVerifiedRule(rule.RuleId));
+            var source = string.IsNullOrWhiteSpace(rule.Category) ? "yara" : rule.Category;
+            Add(source, $"{rule.RuleId}: {rule.Name}", weight, rule.Severity == Severity.Critical,
+                IsVerifiedRule(rule.RuleId), string.Join(", ", rule.Evidence));
+
         }
 
         if (observation.Signature == SignatureStatus.SignedUntrusted)
@@ -169,7 +182,10 @@ public sealed class DecisionEngine
         if (b[0] == 169 && b[1] == 254) return false;
         if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;
         if (b[0] == 192 && b[1] == 0 && b[2] == 0) return false;
+        if (b[0] == 192 && b[1] == 0 && b[2] == 2) return false;        // TEST-NET-1
         if (b[0] == 198 && (b[1] == 18 || b[1] == 19)) return false;
+        if (b[0] == 198 && b[1] == 51 && b[2] == 100) return false;     // TEST-NET-2
+        if (b[0] == 203 && b[1] == 0 && b[2] == 113) return false;      // TEST-NET-3
         return true;
     }
 }

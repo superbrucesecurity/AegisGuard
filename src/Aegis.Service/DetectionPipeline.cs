@@ -9,6 +9,10 @@ public sealed class DetectionPipeline
 {
     private readonly FileInspector _inspector = new();
     private readonly DecisionEngine _decision = new();
+    private readonly PeInspector _pe = new();
+    private readonly ArchiveInspector _archive = new();
+    private readonly ScriptInspector _script = new();
+    private readonly MacroInspector _macro = new();
     private readonly YaraLiteEngine _yara;
     private readonly ThreatIntel _intel;
     private readonly QuarantineManager _quarantine;
@@ -59,6 +63,7 @@ public sealed class DetectionPipeline
         _state.Record(decision);
         _reputation.Record(observation.Sha256 ?? observation.Subject,
             decision.Verdict is Verdict.Block or Verdict.Quarantine);
+        await _reputation.SaveAsync(ct).ConfigureAwait(false);
 
         if (decision.Severity >= Severity.High)
             _logger.LogInformation("Amenaza {Severity}: {Subject} -> {Verdict} (riesgo {Risk})", decision.Severity, observation.Subject, decision.Verdict, decision.Risk);
@@ -75,6 +80,9 @@ public sealed class DetectionPipeline
     {
         var ruleMatches = new List<RuleMatch>(observation.RuleMatches);
         await EnrichAsync(observation, ruleMatches, ct).ConfigureAwait(false);
+        // La observación persistida (y la UI) debe mostrar la evidencia real
+        // producida por todos los analizadores, no solo la del watcher.
+        observation.RuleMatches = [.. ruleMatches];
         var local = _decision.Assess(observation, ruleMatches, _intel.SnapshotHashes());
         return _decision.Decide(observation, local, _state.GetPolicy());
     }
@@ -171,13 +179,13 @@ public sealed class DetectionPipeline
         {
             try
             {
-                var (hash, length, eicar) = await _inspector.HashAsync(o.Subject, ct).ConfigureAwait(false);
-                o.Sha256 = hash;
-                o.FileSize = length;
+                var inspection = await _inspector.InspectAsync(o.Subject, ct: ct).ConfigureAwait(false);
+                o.Sha256 = inspection.Sha256;
+                o.FileSize = inspection.Length;
                 o.FileExtension ??= Path.GetExtension(o.Subject);
                 o.Signature = _inspector.VerifySignature(o.Subject);
 
-                if (eicar)
+                if (inspection.Eicar)
                 {
                     matches.Add(new RuleMatch
                     {
@@ -188,8 +196,67 @@ public sealed class DetectionPipeline
                     });
                 }
 
-                var yaraMatches = await _yara.ScanFileAsync(o.Subject, hash, ct).ConfigureAwait(false);
+                if (inspection.Truncated)
+                {
+                    // Un fichero por encima del tope no se presenta como limpio:
+                    // se registra una razón verificable de análisis incompleto.
+                    matches.Add(new RuleMatch
+                    {
+                        RuleId = "ANALYSIS-TRUNCATED",
+                        Name = "Análisis limitado por tamaño",
+                        Severity = Severity.Info,
+                        Evidence = [$"{inspection.Length} bytes > {AnalysisLimits.MaxScanBytes} bytes"]
+                    });
+                }
+
+                var yaraMatches = await _yara.ScanFileAsync(o.Subject, inspection.Sha256, ct).ConfigureAwait(false);
                 matches.AddRange(yaraMatches);
+
+                var ext = NormalizeExtension(o.FileExtension ?? Path.GetExtension(o.Subject));
+                if (ext is ".exe" or ".dll" or ".sys" or ".scr" or ".com" or ".cpl" or ".ocx" or ".drv")
+                    matches.AddRange(_pe.Analyze(inspection.Prefix, inspection.Length));
+
+                if (ext is ".ps1" or ".psm1" or ".bat" or ".cmd" or ".js" or ".jse" or ".vbs" or ".hta")
+                    matches.AddRange(_script.Analyze(inspection.Prefix, ext));
+
+                var archiveExt = ext is ".zip" or ".jar" or ".gz" or ".tgz" or ".tar";
+                var macroExt = ext is ".doc" or ".xls" or ".ppt" or ".docx" or ".xlsx" or ".pptx" or
+                    ".docm" or ".xlsm" or ".pptm";
+                byte[]? container = null;
+                if (archiveExt || (macroExt && ext is not (".doc" or ".xls" or ".ppt")))
+                {
+                    var read = await _inspector.ReadBytesAsync(o.Subject, ct: ct).ConfigureAwait(false);
+                    container = read.bytes;
+                    if (read.truncated)
+                        matches.Add(new RuleMatch
+                        {
+                            RuleId = "CONTAINER-INCOMPLETE",
+                            Name = "Contenedor no analizado por completo",
+                            Severity = Severity.Info,
+                            Category = archiveExt ? "archive" : "macro",
+                            Evidence = [$"{read.length} bytes > {AnalysisLimits.MaxArchiveBytes} bytes"]
+                        });
+                }
+
+                if (archiveExt && container is not null)
+                    matches.AddRange(await _archive.AnalyzeAsync(container, ext, ct).ConfigureAwait(false));
+
+                if (macroExt)
+                    matches.AddRange(await _macro.AnalyzeAsync(container ?? inspection.Prefix, ext, ct)
+                        .ConfigureAwait(false));
+
+                // La firma y los analizadores abren la ruta por separado. Volver a
+                // calcular el hash impide decidir sobre un contenido que cambió.
+                var confirmed = await _inspector.HashAsync(o.Subject, ct).ConfigureAwait(false);
+                if (!string.Equals(confirmed.sha256, inspection.Sha256, StringComparison.OrdinalIgnoreCase))
+                    matches.Add(new RuleMatch
+                    {
+                        RuleId = "ANALYSIS-CONTENT-CHANGED",
+                        Name = "El fichero cambió durante el análisis",
+                        Severity = Severity.High,
+                        Category = "integrity",
+                        Evidence = [$"inicial={inspection.Sha256}", $"final={confirmed.sha256}"]
+                    });
 
                 if (_canary.IsCanary(o.Subject) && _canary.WasModified(o.Subject))
                     o.BehaviorFlags.Add("ransomware_canary_modified");
@@ -244,6 +311,14 @@ public sealed class DetectionPipeline
 
         // La reputación se lee aquí para que los eventos de fichero ya tengan hash.
         o.Reputation = _reputation.Get(o.Sha256 ?? o.Subject);
+    }
+
+    private static string NormalizeExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension)) return string.Empty;
+        var value = extension.Trim();
+        if (!value.StartsWith('.')) value = "." + value;
+        return value.ToLowerInvariant();
     }
 
     private async Task ApplyRemediationAsync(ThreatRecord threat, PolicySettings policy, CancellationToken ct)

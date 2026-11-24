@@ -26,6 +26,65 @@ public sealed class FileInspectorTests
     }
 
     [Fact]
+    public async Task InspectKeepsHashOfFullFileAndBoundedPrefix()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var file = Path.Combine(Path.GetTempPath(), $"aegis-inspect-{Guid.NewGuid():N}.bin");
+        var content = new byte[4096];
+        Random.Shared.NextBytes(content);
+        await File.WriteAllBytesAsync(file, content);
+        try
+        {
+            var inspector = new FileInspector();
+            var result = await inspector.InspectAsync(file, prefixBytes: 16);
+
+            Assert.False(result.Truncated);
+            Assert.Equal(4096, result.Length);
+            Assert.Equal(16, result.Prefix.Length);
+            Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant(),
+                result.Sha256);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public async Task InspectReportsTruncatedHashWithoutReadingWholeFile()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var file = Path.Combine(Path.GetTempPath(), $"aegis-inspect-{Guid.NewGuid():N}.bin");
+        var content = new byte[4096];
+        Random.Shared.NextBytes(content);
+        await File.WriteAllBytesAsync(file, content);
+        try
+        {
+            var inspector = new FileInspector();
+            var result = await inspector.InspectAsync(file, maxBytes: 10, prefixBytes: 10);
+
+            Assert.True(result.Truncated);
+            Assert.Equal(4096, result.Length);
+            Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content.AsSpan(0, 10)))
+                .ToLowerInvariant(), result.Sha256);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public async Task ReadBytesHonoursArchiveCap()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var file = Path.Combine(Path.GetTempPath(), $"aegis-read-{Guid.NewGuid():N}.bin");
+        await File.WriteAllBytesAsync(file, new byte[100]);
+        try
+        {
+            var (bytes, truncated, length) = await new FileInspector().ReadBytesAsync(file, maxBytes: 10);
+            Assert.Equal(10, bytes.Length);
+            Assert.True(truncated);
+            Assert.Equal(100, length);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
     public void EicarSampleBytesAreRecognizedInMemory()
     {
         // No se escribe la muestra en disco: otros antivirus pueden bloquearla

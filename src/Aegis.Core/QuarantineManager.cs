@@ -10,7 +10,6 @@ public sealed class QuarantineManager
     private static readonly byte[] Entropy = "AegisGuard.Quarantine.v1"u8.ToArray();
     private const int NonceSize = 12;
     private const int TagSize = 16;
-    private const long MaxQuarantineBytes = 512L * 1024 * 1024;
 
     private readonly string _root;
     private readonly string _keyFile;
@@ -69,12 +68,18 @@ public sealed class QuarantineManager
             throw new InvalidOperationException("La ruta está protegida y no puede ponerse en cuarentena.");
         if (!File.Exists(path)) throw new FileNotFoundException("El fichero ya no existe", path);
 
+        // Comprobar el tamaño antes de asignar el buffer: ReadAllBytesAsync de
+        // un fichero gigante provocaría OOM antes de poder rechazarlo.
+        var declaredLength = new FileInfo(path).Length;
+        if (declaredLength > AnalysisLimits.MaxScanBytes)
+            throw new IOException("El fichero supera el límite de cuarentena (512 MB).");
+
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             EnsureKey();
             var plain = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
-            if (plain.Length > MaxQuarantineBytes)
+            if (plain.Length > AnalysisLimits.MaxScanBytes)
                 throw new IOException("El fichero supera el límite de cuarentena (512 MB).");
             var actualHash = Convert.ToHexString(SHA256.HashData(plain));
             if (!string.IsNullOrWhiteSpace(sha256) &&

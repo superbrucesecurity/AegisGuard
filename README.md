@@ -14,14 +14,14 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 
 | Capacidad | Estado | Nota |
 | --- | --- | --- |
-| Motor local (hash, firma, reglas YARA-lite, reputación, heurística) | Implementado | Análisis incremental y event-driven. |
+| Motor local (hash, firma, YARA-lite, PE, scripts, comprimidos, macros, reputación, heurística) | Implementado | Análisis incremental, event-driven y con topes antibomba. |
 | Monitorización ETW + watchers + canarios anti-ransomware | Implementado | ETW activo en el equipo de desarrollo. |
 | Firewall WFP por aplicación/IP/puerto | Implementado | Vía COM `HNetCfg.FwPolicy2`, sin driver callout. |
 | Cuarentena reversible | Implementado | AES-GCM + DPAPI, rutas restringidas. |
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 92 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 121 casos | `tests/Aegis.Checks`. |
 
 ### `dev/v3.0` · Fase 1 — correcciones críticas verificadas
 
@@ -45,7 +45,18 @@ Ciclo verificado en ruta aislada: `install.cmd` → `finish.cmd` → servicio `R
 
 La SPA se verificó en navegador contra el servicio instalado, inyectando el token igual que WebView2: muestra `v3.0.0 · motor local`, `Modo aprendizaje`, KPI `Bloqueos / cuarentenas = 0 / 0`, etiquetas `Servicio SCM: sí`, `Sin pérdida de eventos: sí` y el nombre del servicio en el estado del motor. Durante esa comprobación apareció y se corrigió un `ReferenceError` (`TOKEN` en lugar de `token`) que impedía la carga inicial de datos. No hubo errores de página ni respuestas HTTP ≥ 400 en el contexto de la SPA; el capturador de pantalla no se pudo inspeccionar visualmente con este modelo, por lo que la validación se apoyó en DOM y consola.
 
-**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición real de 20 s en reposo (24 núcleos lógicos, monitorización y WFP activos) el servicio registró 79,9 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 82,0 MB y 2 %. El método y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
+### `dev/v3.0` · Fase 3 — motor multicapa local
+
+- `FileInspector.InspectAsync` calcula hash/EICAR en una sola lectura acotada y conserva un prefijo para los analizadores. Si el fichero supera 512 MiB se registra `ANALYSIS-TRUNCATED`; no se presenta como limpio. La cuarentena comprueba el tamaño declarado antes de reservar memoria.
+- `PeInspector` analiza cabeceras DOS/COFF/Optional y tabla de secciones sobre la copia ya leída: secciones ejecutables y escribibles, punto de entrada no ejecutable, ausencia de importaciones/hardenings y overlay grande. Una cabecera malformada es `Low`/incompleta, nunca malware.
+- `ScriptInspector` decodifica UTF-8/UTF-16 y Base64 observable, y correlaciona codificación, evaluación dinámica, ejecución externa, descarga y ofuscación. Una sola señal es `Info`; hacen falta dos o tres señales independientes para `Medium`/`High`. EICAR codificado sí se verifica como crítico.
+- `ArchiveInspector` recorre ZIP/JAR, GZIP y TAR en memoria: comprueba tamaños declarados y acumulados antes de descomprimir, limita entradas, ratio, total y profundidad (3), detecta miembros ejecutables y anidamiento, y marca entradas cifradas como no verificadas. No extrae nada a disco.
+- `MacroInspector` localiza `vbaProject.bin` en OOXML y streams VBA legibles en contenedores OLE/CFB; exige autoarranque **y** ejecución externa para `High`. El texto visible de un documento no cuenta como evidencia de macro.
+- La reputación se persiste en `reputation.json` con suma de verificación; un fichero corrupto se descarta. La primera decisión adversariabaja la reputación a 0,35 y hace falta una segunda observación para 0,1, evitando el bucle de realimentación.
+- Las razones de la UI incluyen el analizador y la evidencia (por ejemplo `pe: PE-WRITABLE-EXECUTABLE-SECTION: … [.text (0xE0000020)]`). Tras analizar se recalcula el hash: si el contenido cambió, se añade `ANALYSIS-CONTENT-CHANGED` en lugar de decidir sobre una lectura distinta.
+- Verificado con 121 tests automatizados y build Release sin advertencias. En un servicio aislado, `POST /api/scan` sobre un `.ps1` sintético devolvió `Monitor`, riesgo `42`, razón `script: SCRIPT-MULTIPLE-EXECUTION-SIGNALS … [codificación Base64/PowerShell, evaluación dinámica, ejecución externa]` y creó `reputation.json`; `/api/health` devolvió `3.0.0` con `droppedEvents=0`. La autoprueba EICAR informó de bloqueo externo por Bitdefender antes del análisis, resultado que se respeta sin desactivar ese producto; la detección EICAR del motor está cubierta por tests. **Límites:** no hay módulos YARA reales ni `regex`/`xor`, no se analizan 7z/RAR, y el lector OLE no interpreta streams en mini-FAT (se informan como no verificados). Cada analizador sigue siendo user-mode y determinista.
+
+**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición de control de 20 s en reposo tras la Fase 3 (24 núcleos lógicos, monitorización y WFP activos, compilación Debug) el servicio registró 81,8 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 84,6 MB y 2 % y `droppedEvents=0`. El método, la referencia anterior y el JSON generado están en [benchmarks](docs/BENCHMARKS.md); la medición con carga y compilación Release queda para la Fase 6. Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
 
 ## Requisitos
 

@@ -19,7 +19,6 @@ public sealed class YaraLiteEngine
     private const int MaxPatternsPerRule = 64;
     private const int ScanChunkBytes = 256 * 1024;
     private const int OverlapBytes = 8 * 1024;
-    private const long MaxScanBytes = 512L * 1024 * 1024;
 
     private readonly List<YaraLiteRule> _rules = [];
     private readonly object _gate = new();
@@ -126,7 +125,7 @@ public sealed class YaraLiteEngine
         if (snapshot.Count == 0) return [];
 
         var fileInfo = new FileInfo(path);
-        if (!fileInfo.Exists || fileInfo.Length > MaxScanBytes) return [];
+        if (!fileInfo.Exists || fileInfo.Length > AnalysisLimits.MaxScanBytes) return [];
 
         var hits = snapshot.Select(r => new bool[r.Patterns.Count]).ToArray();
         var needHash = knownSha256 is null || snapshot.Any(r =>

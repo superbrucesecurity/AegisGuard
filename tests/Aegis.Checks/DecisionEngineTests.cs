@@ -194,6 +194,9 @@ public sealed class DecisionEngineTests
     [InlineData("::1", false)]
     [InlineData("127.0.0.1", false)]
     [InlineData("100.64.0.1", false)]
+    [InlineData("192.0.2.10", false)]
+    [InlineData("198.51.100.10", false)]
+    [InlineData("203.0.113.10", false)]
     [InlineData("8.8.8.8", true)]
     public void PublicIpDetectionExcludesNonRoutableAddresses(string address, bool expected)
     {
@@ -201,6 +204,29 @@ public sealed class DecisionEngineTests
         var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
         Assert.Equal(expected, local.Contributions.Any(c => c.Source == "network"));
+    }
+
+    [Fact]
+    public void ReasonsIncludeEvidenceAndAnalyzerSource()
+    {
+        var observation = new Observation { Kind = EventKind.ManualScan, Subject = @"C:\Users\test\sample.exe" };
+        var rules = new[]
+        {
+            new RuleMatch
+            {
+                RuleId = "PE-WRITABLE-EXECUTABLE-SECTION",
+                Name = "Sección W+X",
+                Severity = Severity.Medium,
+                Category = "pe",
+                Evidence = [".text (0xE0000020)"]
+            }
+        };
+
+        var local = _engine.Assess(observation, rules, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var decision = _engine.Decide(observation, local, _policy);
+
+        Assert.Contains(decision.Reasons,
+            r => r.StartsWith("pe:", StringComparison.Ordinal) && r.Contains(".text (0xE0000020)", StringComparison.Ordinal));
     }
 
     [Fact]

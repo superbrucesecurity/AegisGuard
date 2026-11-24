@@ -527,7 +527,8 @@ public sealed class MonitoringWorker : BackgroundService
     private static bool IsInterestingFile(string path)
     {
         var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-        return ext is "exe" or "dll" or "sys" or "scr" or "com" or "msi" or "msp" or "ps1" or "bat" or "cmd" or "vbs" or "js" or "jse" or "hta" or "lnk" or "docm" or "xlsm" or "pptm" or "iso" or "img" or "jar";
+        return ext is "exe" or "dll" or "sys" or "scr" or "com" or "msi" or "msp" or "ps1" or "bat" or "cmd" or "vbs" or "js" or "jse" or "hta" or "lnk" or "docm" or "xlsm" or "pptm" or "iso" or "img" or "jar"
+            or "zip" or "gz" or "tar" or "tgz" or "doc" or "xls" or "ppt" or "docx" or "xlsx" or "pptx";
     }
 
     private static bool IsPersistenceKey(string key) =>

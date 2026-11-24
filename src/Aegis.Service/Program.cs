@@ -31,7 +31,7 @@ if (OperatingSystem.IsWindows())
 builder.WebHost.UseUrls("http://127.0.0.1:8787");
 
 builder.Services.AddSingleton(new RuntimeState());
-builder.Services.AddSingleton(new LocalReputation());
+builder.Services.AddSingleton(new LocalReputation(Path.Combine(appRoot, "reputation.json")));
 builder.Services.AddSingleton(new EventStore(appRoot, config.Policy.MaxEvents));
 builder.Services.AddSingleton(new YaraLiteEngine());
 builder.Services.AddSingleton(new ThreatIntel());

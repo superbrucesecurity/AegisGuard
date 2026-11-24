@@ -24,13 +24,22 @@ Bajo `LocalSystem`, el watcher usa `AegisProfilePaths` para vigilar Desktop/Docu
 
 ## Privacidad de los datos
 
-Las observaciones y decisiones se escriben únicamente en `events.jsonl` y `threats.jsonl` bajo `%AEGIS_DATA_DIR%`, con ACL restringida. El contenido de los ficheros analizados se procesa en memoria para calcular hash, firma y reglas; no se envía a ningún servidor. La reputación es un historial en memoria de la sesión y no se persiste. No hay telemetría saliente.
+Las observaciones y decisiones se escriben únicamente en `events.jsonl` y `threats.jsonl` bajo `%AEGIS_DATA_DIR%`, con ACL restringida. El contenido de los ficheros analizados se procesa en memoria para calcular hash, firma, reglas, PE, scripts, archivos y macros; no se envía a ningún servidor ni se extrae a disco. La reputación se persiste en `reputation.json` con suma SHA-256: un fichero alterado o corrupto se descarta sin afectar a la decisión. Es un historial local, no una lista remota. No hay telemetría saliente.
 
 ## Verificación de firma
 
 `FileInspector.VerifySignature` usa el ciclo documentado de WinVerifyTrust: `WTD_STATEACTION_VERIFY=1`, y siempre `WTD_STATEACTION_CLOSE=2` con el mismo `hWVTStateData`, incluso si la verificación falla. Se liberan también la estructura nativa y la cadena del archivo. La consulta usa solo caché local de revocación para no depender de Internet.
 
 Los códigos se mapean a estados verificables: `SignedTrusted`, `Unsigned`, `SignedUntrusted`, `ChainNotVerifiable` y `Unknown`. Una firma válida no implica inocuidad y una firma ausente no implica malware; la cadena no verificable por falta de caché es una señal débil, nunca evidencia crítica.
+
+## Análisis estructural y antibomba
+
+- Todas las lecturas están acotadas: hash/EICAR/YARA hasta 512 MiB por fichero, prefijo de 8 MiB para analizadores, archivos hasta 64 MiB, 2048 entradas, 32 MiB por miembro, 128 MiB acumulados y profundidad de anidamiento 3.
+- Los tamaños declarados de ZIP/TAR se comprueban **antes** de descomprimir; la descompresión es streaming y se aborta al superar el límite. Nunca se extraen ficheros a disco, evitando path traversal.
+- Una firma válida no exime del resto de analizadores; una firma ausente no es malware. Los scripts no se puntúan por "sin firma" porque WinTrust devuelve `NotApplicable` para esa extensión.
+- El análisis de PE, scripts, archivos y macros nunca genera por sí solo un indicador **verificado**. Solo EICAR y los hashes de la lista local lo son. La reputación requiere dos decisiones adversarias para considerarse muy baja.
+- Si el fichero cambia entre la lectura inicial y la verificación final se registra `ANALYSIS-CONTENT-CHANGED`; la decisión no se presenta como fiable. La cuarentena vuelve a calcular el hash antes de mover el archivo.
+- Los contenedores cifrados o ilegibles y los streams VBA no interpretados se marcan como `UNVERIFIED`, nunca como malware ni como limpios.
 
 ## Colas y visibilidad
 

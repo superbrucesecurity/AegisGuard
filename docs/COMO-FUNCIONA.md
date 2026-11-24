@@ -10,7 +10,7 @@ La idea central es: **observar → normalizar → enriquecer → decidir → rem
 flowchart LR
   A[ETW: proceso, red, DNS, registro] --> N[Normalización y deduplicación]
   B[FileSystemWatcher + canarios] --> N
-  N --> E[Enriquecimiento local\nSHA-256, firma, reputación, YARA-lite, heurística]
+  N --> E[Enriquecimiento local\nSHA-256, firma, YARA-lite, PE, scripts, archivos, macros, reputación]
   E --> D[Decisión determinista local]
   D --> R{Veredicto}
   R -- Allow --> X[Registrar evento]
@@ -42,11 +42,17 @@ Cada observación se enriquece con señales que no salen del equipo:
 | --- | --- |
 | SHA-256 | Identidad del fichero y comparación con listas locales. |
 | Firma Authenticode | Distingue `SignedTrusted`, `SignedUntrusted`, `Unsigned`, `ChainNotVerifiable` y `Unknown`. Usa ciclo WinTrust completo con cierre del handle y solo caché local de revocación; una firma válida no certifica inocuidad. |
-| Reputación local | Historial de decisiones de la sesión, en memoria y sin consultas remotas. |
+| Reputación local | Historial persistido en `reputation.json` con checksum; dos decisiones adversarias se necesitan para bajarla a 0,1. Sin consultas remotas. |
 | YARA-lite | Subconjunto de YARA: cadenas, hexadecimal con `??`, `nocase`/`wide` y `severity`. |
+| PE | Cabeceras y secciones: W+X, punto de entrada, importaciones, hardening y overlay. Una cabecera rota es análisis incompleto, no malware. |
+| Scripts | UTF-8/UTF-16, Base64 observable y correlación de codificación, `IEX`, ejecución externa, descarga y ofuscación. Una sola cadena no bloquea. |
+| Comprimidos | ZIP/JAR, GZIP y TAR en memoria con topes declarados antes de descomprimir, miembros ejecutables y anidamiento limitado. Nada se extrae a disco. |
+| Macros | `vbaProject.bin` en OOXML y streams VBA legibles en OLE/CFB; autoarranque + ejecución externa. El texto visible del documento no puntúa. |
 | Heurística | Banderas realmente producidas por el monitor: persistencia en registro, modificación de canarios, manifiesto de canarios alterado, beacon C2, ejecución desde `%TEMP%`, padre inusual (Office), renombrado, reutilización de PID y saturación de cola. |
 
 Las banderas que el monitor no produce se ignoran: no puntúan capacidades no implementadas. `Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
+
+Cada evidencia lleva un `RuleId`, un analizador y una cadena verificable. Por ejemplo, una sección ejecutable y escribible aparece en las razones como `pe: PE-WRITABLE-EXECUTABLE-SECTION: … [.text (0xE0000020)] (+22)`. Al terminar el análisis se recalcula el hash para detectar que el fichero cambió mientras se inspeccionaba. Los contenedores cifrados o no interpretables se muestran como no verificados, no como limpios.
 
 ## 3. Decisión determinista local
 

@@ -54,29 +54,97 @@ public sealed class FileInspector
         }
     }
 
-    public async Task<(string sha256, long length, bool eicar)> HashAsync(string path, CancellationToken ct = default)
+    /// <summary>
+    /// Resultado de una única lectura secuencial del fichero. <see cref="Prefix"/>
+    /// contiene los primeros bytes para analizadores estructurales;
+    /// <see cref="Truncated"/> indica que el fichero supera el tope y que el
+    /// análisis no puede presentarse como completo.
+    /// </summary>
+    public sealed record FileInspection(
+        string Sha256,
+        long Length,
+        bool Eicar,
+        bool Truncated,
+        byte[] Prefix);
+
+    /// <summary>
+    /// Calcula hash/EICAR en una sola pasada y conserva una muestra acotada
+    /// para el resto de analizadores. Nunca lee más de <paramref name="maxBytes"/>.
+    /// </summary>
+    public async Task<FileInspection> InspectAsync(
+        string path,
+        long maxBytes = AnalysisLimits.MaxScanBytes,
+        int prefixBytes = AnalysisLimits.MaxSnapshotBytes,
+        CancellationToken ct = default)
     {
-        using var sha = SHA256.Create();
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
+        if (maxBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        if (prefixBytes < 0) throw new ArgumentOutOfRangeException(nameof(prefixBytes));
+
+        const int chunkSize = 128 * 1024;
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+            chunkSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
         var scanner = new EicarScanner();
-        long total = 0;
+        using var prefix = new MemoryStream(Math.Min(prefixBytes, chunkSize));
+        long total = fs.Length;
+        var toRead = Math.Min(total, maxBytes);
+        var remaining = toRead;
         try
         {
-            int read;
-            while ((read = await fs.ReadAsync(buffer.AsMemory(0, 128 * 1024), ct).ConfigureAwait(false)) > 0)
+            while (remaining > 0)
             {
-                total += read;
-                sha.TransformBlock(buffer, 0, read, null, 0);
+                var wanted = (int)Math.Min(chunkSize, remaining);
+                var read = await fs.ReadAsync(buffer.AsMemory(0, wanted), ct).ConfigureAwait(false);
+                if (read <= 0) break;
+                sha.AppendData(buffer.AsSpan(0, read));
                 scanner.Scan(buffer.AsSpan(0, read));
+
+                var keep = Math.Min(read, prefixBytes - (int)prefix.Length);
+                if (keep > 0) prefix.Write(buffer, 0, keep);
+                remaining -= read;
             }
-            sha.TransformFinalBlock([], 0, 0);
-            return (Convert.ToHexString(sha.Hash!).ToLowerInvariant(), total, scanner.Found);
+            var hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+            return new FileInspection(hash, total, scanner.Found, total > toRead || remaining > 0, prefix.ToArray());
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public async Task<(string sha256, long length, bool eicar)> HashAsync(string path, CancellationToken ct = default)
+    {
+        var result = await InspectAsync(path, ct: ct).ConfigureAwait(false);
+        return (result.Sha256, result.Length, result.Eicar);
+    }
+
+    /// <summary>
+    /// Lee una copia acotada del fichero para analizadores que necesitan el
+    /// contenido completo (archivos, OOXML). Comprueba el tamaño declarado
+    /// antes de reservar memoria y nunca extrae nada a disco.
+    /// </summary>
+    public async Task<(byte[] bytes, bool truncated, long length)> ReadBytesAsync(
+        string path,
+        long maxBytes = AnalysisLimits.MaxArchiveBytes,
+        CancellationToken ct = default)
+    {
+        if (maxBytes <= 0 || maxBytes > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(maxBytes));
+
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+            128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var length = fs.Length;
+        var wanted = (int)Math.Min(length, maxBytes);
+        var bytes = new byte[wanted];
+        var offset = 0;
+        while (offset < wanted)
+        {
+            var read = await fs.ReadAsync(bytes.AsMemory(offset), ct).ConfigureAwait(false);
+            if (read <= 0) break;
+            offset += read;
+        }
+        return (bytes.AsSpan(0, offset).ToArray(), length > wanted || offset < wanted, length);
     }
 
     private static readonly HashSet<string> SignableExtensions = new(StringComparer.OrdinalIgnoreCase)

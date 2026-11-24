@@ -2,6 +2,7 @@
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
+using Aegis.Core;
 using Microsoft.Web.WebView2.Core;
 
 namespace Aegis.UI;
@@ -9,6 +10,7 @@ namespace Aegis.UI;
 public partial class MainWindow : Window
 {
     private const string DashboardUrl = "http://127.0.0.1:8787/";
+    private readonly CancellationTokenSource _retryCts = new();
     private int _retryCount;
 
     public MainWindow()
@@ -39,14 +41,18 @@ public partial class MainWindow : Window
             var token = ReadToken();
             if (!string.IsNullOrEmpty(token))
             {
-                await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
-                    $"window.AEGIS_TOKEN = {JsonSerializer.Serialize(token)};").ConfigureAwait(true);
+                // El token solo se expone al origen local; una navegación externa
+                // accidental no debe recibir la credencial del servicio.
+                var script = $"if (location.origin === 'http://127.0.0.1:8787') " +
+                             $"window.AEGIS_TOKEN = {JsonSerializer.Serialize(token)};";
+                await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script).ConfigureAwait(true);
             }
             else
             {
                 StatusText.Text = "No se pudo leer la credencial local del servicio.";
             }
 
+            Browser.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
             Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
             Browser.CoreWebView2.Navigate(DashboardUrl);
         }
@@ -56,11 +62,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private void CoreWebView2_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttp ||
+            !string.Equals(uri.Host, "127.0.0.1", StringComparison.Ordinal) ||
+            uri.Port != 8787)
+        {
+            e.Cancel = true;
+        }
+    }
+
     private async void CoreWebView2_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        if (_retryCts.IsCancellationRequested) return;
         if (e.IsSuccess)
         {
-            StatusText.Text = "Conectado · motor local activo";
+            // NavigationCompleted solo indica que se cargó la página; la API
+            // puede estar devolviendo 401. El estado real lo muestra la SPA.
+            StatusText.Text = "Interfaz cargada · compruebe el estado de la API";
             return;
         }
         if (_retryCount++ >= 20)
@@ -69,15 +89,29 @@ public partial class MainWindow : Window
             return;
         }
         StatusText.Text = "Esperando al servicio local...";
-        await Task.Delay(1500).ConfigureAwait(true);
-        if (Browser.CoreWebView2 is not null) Browser.CoreWebView2.Navigate(DashboardUrl);
+        try
+        {
+            await Task.Delay(1500, _retryCts.Token).ConfigureAwait(true);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        if (!_retryCts.IsCancellationRequested && Browser.CoreWebView2 is not null)
+            Browser.CoreWebView2.Navigate(DashboardUrl);
     }
 
     private static string ReadToken()
     {
-        var root = Environment.GetEnvironmentVariable("PROGRAMDATA") ?? @"C:\ProgramData";
-        var path = Path.Combine(root, "AegisGuard", "ui-token");
-        return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+        var path = Path.Combine(AegisPaths.DataRoot, "ui-token");
+        try
+        {
+            return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
     }
 
     private void TitleBar_Drag(object sender, MouseButtonEventArgs e)
@@ -94,6 +128,13 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _retryCts.Cancel();
+        if (Browser.CoreWebView2 is not null)
+        {
+            Browser.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
+            Browser.CoreWebView2.NavigationCompleted -= CoreWebView2_NavigationCompleted;
+        }
         Browser.Dispose();
+        _retryCts.Dispose();
     }
 }

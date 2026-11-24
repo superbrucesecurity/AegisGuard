@@ -29,7 +29,7 @@ Liquid AI /decisions/v1/systemone — d1.2-ultra
 3. **Decisión local**: `LocalAssessment` produce score, evidencias y criticalidad. `DecisionEngine` calcula riesgo, confianza, severidad y veredicto.
 4. **IA opcional**: solo se envían eventos con score ≥ 20, banderas de comportamiento, análisis manual o cambios de persistencia. Se manda un subconjunto mínimo (prefijo de hash, tipo, bucket de tamaño, firma, reputación, banderas e IDs de regla). Nunca se envía la ruta completa ni el contenido del fichero.
 5. **Remediación**: cuarentena reversible solo para rutas seguras; bloqueo WFP solo con veredicto `Block`/`Quarantine`; modo aprendizaje registra conexiones sin bloquear.
-6. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl` bajo `C:\ProgramData\AegisGuard`.
+6. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl` bajo `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`). Las reglas se leen de `%AEGIS_RULES_DIR%` (por defecto el directorio `rules` del servicio).
 
 ## Reglas de decisión
 

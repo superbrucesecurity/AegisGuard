@@ -20,10 +20,17 @@ public sealed class TelemetryUtilsTests
 
     [Theory]
     [InlineData(56944, "56944")]
-    [InlineData(-1, "65535")]
+    [InlineData(-1, null)]
+    [InlineData(70000, null)]
     [InlineData("443", "443")]
-    public void PortsAreClampedToUInt16(object raw, string expected) =>
+    public void InvalidPortsAreRejectedInsteadOfWrapping(object raw, string? expected) =>
         Assert.Equal(expected, TelemetryAddress.NormalizePort(raw));
+
+    [Theory]
+    [InlineData(" 1.2.3.4 ", "1.2.3.4")]
+    [InlineData("1.2.3.4:443", "1.2.3.4")]
+    public void AddressesAreTrimmedAndSplitFromPort(string raw, string expected) =>
+        Assert.Equal(expected, TelemetryAddress.Normalize(raw));
 
     [Fact]
     public void DuplicateWindowSuppressesRepeatedKeys()

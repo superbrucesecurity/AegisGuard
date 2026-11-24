@@ -42,19 +42,19 @@ public sealed class DecisionEngine
             ? Math.Clamp(evidenceConfidence * 0.65 + ai.Confidence * 0.35, 0, 0.99)
             : evidenceConfidence;
 
-        var verdict = Verdict.Allow;
-        if (risk >= policy.QuarantineThreshold && policy.AutoQuarantine)
-        {
-            verdict = Verdict.Quarantine;
-        }
-        else if (risk >= policy.BlockThreshold)
-        {
-            verdict = Verdict.Block;
-        }
-        else if (risk >= policy.MonitorThreshold)
-        {
+        var localVerdict = VerdictFromRisk(local.Score, policy);
+        var verdict = VerdictFromRisk(risk, policy);
+
+        // La IA puede reforzar la señal, pero nunca puede cruzar sola un umbral
+        // de remediación: sin evidencia local suficiente se queda en Monitor.
+        if (local.Score < policy.BlockThreshold && verdict is Verdict.Block or Verdict.Quarantine)
             verdict = Verdict.Monitor;
-        }
+        else if (local.Score < policy.QuarantineThreshold && verdict == Verdict.Quarantine)
+            verdict = Verdict.Block;
+
+        // La IA solo es decisiva si cambió el veredicto que daba la evidencia
+        // local por sí sola; un indicador crítico local manda por encima de ella.
+        var aiWasDecisive = ai.IsValid && verdict != localVerdict;
 
         if (local.HasCriticalIndicator && observation.Kind is EventKind.FileCreated or EventKind.FileModified or EventKind.ManualScan)
         {
@@ -62,26 +62,17 @@ public sealed class DecisionEngine
             {
                 verdict = Verdict.Quarantine;
             }
-            else if (verdict == Verdict.Allow)
+            else if (verdict is Verdict.Allow or Verdict.Monitor)
             {
                 verdict = Verdict.Block;
             }
         }
 
-        if (!ai.IsValid && verdict == Verdict.Quarantine && !local.HasCriticalIndicator && local.Score < policy.QuarantineThreshold)
-        {
-            verdict = Verdict.Block;
-        }
-
-        // Un único indicador de IA, sin respaldo local, nunca destruye ni bloquea.
-        var aiWasDecisive = false;
-        if (ai.IsValid && ai.Malicious >= 0.85 && ai.Confidence >= 0.8 && local.Score < 30)
+        // Un único indicador de IA, sin respaldo local, como máximo eleva a Monitor.
+        if (ai.IsValid && ai.Malicious >= 0.85 && ai.Confidence >= 0.8 && local.Score < policy.MonitorThreshold)
         {
             if (verdict == Verdict.Allow)
-            {
                 verdict = Verdict.Monitor;
-            }
-            aiWasDecisive = verdict == Verdict.Monitor;
             reasons.Add("IA sospechosa sin respaldo local: elevada a monitorización");
         }
 
@@ -115,12 +106,14 @@ public sealed class DecisionEngine
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(observation.Sha256) && maliciousHashes.Contains(observation.Sha256, StringComparer.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(observation.Sha256) && maliciousHashes.Contains(observation.Sha256))
         {
             Add("hash", "Hash en lista de denegación", 100, true);
         }
 
-        foreach (var rule in ruleMatches)
+        // La misma regla puede llegar dos veces (observación + escáner); contarla
+        // dos veces infla el riesgo hasta cuarentena espuria.
+        foreach (var rule in ruleMatches.GroupBy(r => r.RuleId, StringComparer.OrdinalIgnoreCase).Select(g => g.First()))
         {
             var weight = rule.Severity switch
             {
@@ -176,6 +169,14 @@ public sealed class DecisionEngine
         return assessment;
     }
 
+    private static Verdict VerdictFromRisk(double risk, PolicySettings policy)
+    {
+        if (risk >= policy.QuarantineThreshold && policy.AutoQuarantine) return Verdict.Quarantine;
+        if (risk >= policy.BlockThreshold) return Verdict.Block;
+        if (risk >= policy.MonitorThreshold) return Verdict.Monitor;
+        return Verdict.Allow;
+    }
+
     private static double NormalizeAiSignal(AiClassification ai)
     {
         var weighted = ai.Clean * 0 + ai.Suspicious * 0.55 + ai.Malicious * 1.0;
@@ -201,12 +202,28 @@ public sealed class DecisionEngine
 
     private static bool IsPublicIp(string value)
     {
-        if (!System.Net.IPAddress.TryParse(value, out var ip)) return false;
-        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            return !ip.IsIPv6LinkLocal && !ip.IsIPv6SiteLocal && !ip.IsIPv6Multicast;
-        }
+        if (!System.Net.IPAddress.TryParse(value.Trim(), out var ip)) return false;
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        if (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.Any) ||
+            ip.Equals(System.Net.IPAddress.IPv6Any)) return false;
+
         var b = ip.GetAddressBytes();
-        return !(b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) || b[0] == 127 || (b[0] == 169 && b[1] == 254));
+        if (b.Length == 16)
+        {
+            // fc00::/7 (ULA), fe80::/10 (link-local) y ff00::/8 (multicast).
+            if ((b[0] & 0xfe) == 0xfc) return false;
+            if (b[0] == 0xfe && (b[1] & 0xc0) == 0x80) return false;
+            if (b[0] == 0xff) return false;
+            return true;
+        }
+
+        if (b[0] == 0 || b[0] >= 224 || b[0] == 127) return false;
+        if (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
+            (b[0] == 192 && b[1] == 168)) return false;
+        if (b[0] == 169 && b[1] == 254) return false;
+        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;      // CGNAT
+        if (b[0] == 192 && b[1] == 0 && b[2] == 0) return false;           // IETF
+        if (b[0] == 198 && (b[1] == 18 || b[1] == 19)) return false;       // benchmark
+        return true;
     }
 }

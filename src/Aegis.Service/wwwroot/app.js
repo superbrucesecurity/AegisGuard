@@ -119,7 +119,9 @@
       protected: ['Protección activa', 'La monitorización, el firewall y las reglas locales están operativos.', 'good'],
       learning: ['Modo aprendizaje', 'El motor está observando actividad nueva sin bloquearla automáticamente.', 'info'],
       limited: ['Protección limitada', 'La monitorización funciona, pero el firewall de Windows no está disponible.', 'warn'],
-      degraded: ['Motor degradado', 'La monitorización en tiempo real no está activa. Revise los permisos del servicio.', 'bad'],
+      degraded: ['Motor degradado', s.etwActive === false
+        ? 'ETW no está disponible: se usa sondeo de procesos y watchers. Revise los permisos del servicio.'
+        : 'La monitorización en tiempo real no está activa. Revise los permisos del servicio.', 'bad'],
       starting: ['Iniciando motor…', 'Comprobando monitorización, firewall y clasificador en la nube.', 'warn']
     };
     const [heroTitle, heroDescription, tone] = labels[s.protectionState] || labels.starting;
@@ -130,11 +132,12 @@
     $('#navThreatCount').textContent = number(s.threatsTotal);
     $('#kpiEvents').textContent = number(s.eventsTotal);
     $('#kpiThreats').textContent = number(s.threatsTotal);
-    $('#kpiBlocks').textContent = number(s.quarantinedTotal);
+    $('#kpiBlocks').textContent = number(s.blockedNetworkTotal);
     $('#kpiResources').textContent = `${number(s.cpuPercent)}% / ${Math.round((s.workingSetBytes || 0) / 1048576)} MB`;
 
     const tags = [
       ['Monitorización', s.monitorActive, 'good'],
+      ['ETW', s.etwActive, s.etwActive ? 'good' : 'warn'],
       ['Firewall WFP', s.firewallActive, 'good'],
       ['IA ' + (s.policy?.aiEnabled ? 'activada' : 'desactivada'), !!s.policy?.aiEnabled, s.policy?.aiEnabled ? 'good' : 'warn'],
       ['Enlace IA', s.aiReachable, s.aiReachable ? 'good' : 'warn'],
@@ -152,6 +155,7 @@
 
     const steps = [
       ['Motor en tiempo real', s.monitorActive],
+      ['Telemetría ETW', s.etwActive, 'ETW no disponible; se usa sondeo de procesos'],
       ['Firewall de Windows disponible', s.firewallActive],
       ['Clasificador en la nube', s.aiReachable, 'Sin verificar en esta sesión; use Probar IA'],
       ['Eventos observados', (s.eventsTotal || 0) > 0],
@@ -214,21 +218,25 @@
     });
   }
 
+  function decisionPill(decision) {
+    const verdict = decision?.verdict;
+    const [label, tone] = VERDICT[verdict] || (decision ? ['Evaluado', 'info'] : ['Observado', 'info']);
+    return pill(label, tone);
+  }
+
   function renderEvents() {
-    const rows = state.events.slice(0, 12).map((o) => {
-      const severity = (o.ruleMatches || []).reduce((max, r) => Math.max(max, sevValue(r.severity)), 0);
-      const tone = severity >= 4 ? 'bad' : severity >= 2 ? 'warn' : 'info';
-      return `<tr><td>${esc(time(o.timestamp))}</td><td>${esc(KIND[o.kind] || o.kind)}</td>
-        <td>${esc(o.source)}</td><td class="mono">${esc(detailOf(o)).slice(0, 120)}</td>
-        <td>${pill(o.sha256 ? 'inspeccionado' : 'observado', tone)}</td></tr>`;
-    });
-    $('#recentBody').innerHTML = rows.length ? rows.join('') : emptyRow(5, 'Aún no hay eventos registrados.');
+    const rows = state.events.slice(0, 12).map((o) =>
+      `<tr><td>${esc(time(o.timestamp))}</td><td>${esc(KIND[o.kind] || o.kind)}</td>
+       <td>${esc(o.source)}</td><td class="mono">${esc(detailOf(o)).slice(0, 120)}</td>
+       <td>${decisionPill(o.decision)}</td></tr>`).join('');
+    $('#recentBody').innerHTML = rows.length ? rows : emptyRow(5, 'Aún no hay eventos registrados.');
 
     $('#historyBody').innerHTML = state.events.length ? state.events.map((o) =>
       `<tr><td>${esc(time(o.timestamp))}</td><td>${esc(KIND[o.kind] || o.kind)}</td>
        <td>${esc(o.source)}</td><td class="mono">${esc(detailOf(o)).slice(0, 160)}</td>
-       <td class="mono">${esc((o.sha256 || '—').slice(0, 16))}</td></tr>`).join('')
-      : emptyRow(5, 'Aún no hay eventos registrados.');
+       <td class="mono">${esc((o.sha256 || '—').slice(0, 16))}</td>
+       <td>${decisionPill(o.decision)}</td></tr>`).join('')
+      : emptyRow(6, 'Aún no hay eventos registrados.');
   }
 
   function renderThreats() {
@@ -382,7 +390,14 @@
     }));
   }
 
+  // Los sondeos periódicos no deben acumularse si una respuesta tarda más que
+  // el intervalo; una sola petición en vuelo por conjunto de datos evita
+  // sobrecargar el servicio y reemplazar datos frescos por respuestas obsoletas.
+  const inFlight = { core: false, firewall: false, quarantine: false };
+
   async function loadCore() {
+    if (inFlight.core) return;
+    inFlight.core = true;
     try {
       const [status, events, threats] = await Promise.all([
         api('/api/status'), api('/api/events?limit=200'), api('/api/threats?limit=200')
@@ -394,21 +409,28 @@
       if (state.view === 'dashboard') drawChart();
       if ($('#threatDetail').hidden === false && state.lastDetail) showThreatDetail(state.lastDetail);
     } catch (error) { toast(error.message, true); }
+    finally { inFlight.core = false; }
   }
 
   async function loadFirewall() {
+    if (inFlight.firewall) return;
+    inFlight.firewall = true;
     try {
       const [rules, learned] = await Promise.all([api('/api/firewall/rules'), api('/api/firewall/learned')]);
       state.rules = rules; state.learned = learned;
       renderFirewall();
     } catch (error) { toast(error.message, true); }
+    finally { inFlight.firewall = false; }
   }
 
   async function loadQuarantine() {
+    if (inFlight.quarantine) return;
+    inFlight.quarantine = true;
     try {
       state.quarantine = await api('/api/quarantine');
       renderQuarantine();
     } catch (error) { toast(error.message, true); }
+    finally { inFlight.quarantine = false; }
   }
 
   async function loadSettings() {
@@ -503,9 +525,15 @@
     });
 
     $('#copyEicar').addEventListener('click', async () => {
-      const eicar = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
+      // Compuesto a partir de códigos para no almacenar la firma literal en el
+      // código servido (los antivirus pueden bloquear el propio archivo .js).
+      const eicar = String.fromCharCode(
+        88,53,79,33,80,37,64,65,80,91,52,92,80,90,88,53,52,40,80,94,41,55,67,67,41,55,125,36,
+        69,73,67,65,82,45,83,84,65,78,68,65,82,68,45,65,78,84,73,86,73,82,85,83,45,84,69,83,
+        84,45,70,73,76,69,33,36,72,43,72,42
+      );
       try { await navigator.clipboard.writeText(eicar); toast('Contenido EICAR copiado'); }
-      catch { toast('No se pudo copiar; selecciónalo manualmente: ' + eicar, true); }
+      catch { toast('No se pudo copiar; use samples/create-eicar.ps1.', true); }
     });
 
     window.addEventListener('resize', () => { if (state.view === 'dashboard') drawChart(); });

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Microsoft.Diagnostics.Tracing;
@@ -22,7 +23,10 @@ public sealed class MonitoringWorker : BackgroundService
     private readonly EventDeduplicator _debounce = new();
     private readonly EventDeduplicator _networkDebounce = new();
     private TraceEventSession? _session;
-    private bool _etwActive;
+    private readonly TaskCompletionSource _etwLost = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private Task? _processorTask;
+    private Task? _etwTask;
+    private volatile bool _etwActive;
 
     private static readonly Guid ProcessProvider = new("22FB2CD6-0E7B-422B-A0C7-72FAD1F8D607");
     private static readonly Guid NetworkProvider = new("7DD42A49-5329-4832-8DFD-43D979153A88");
@@ -39,22 +43,30 @@ public sealed class MonitoringWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var processor = Task.Run(() => ProcessQueueAsync(stoppingToken), stoppingToken);
-        StartEtw();
+        _processorTask = Task.Run(() => ProcessQueueAsync(stoppingToken), stoppingToken);
+        StartEtw(stoppingToken);
         StartFileWatchers();
+        // El respaldo arranca solo si ETW no está disponible o se detiene.
         var fallback = StartProcessSnapshotAsync(stoppingToken);
         var canaryLoop = StartCanaryLoopAsync(stoppingToken);
 
         _state.MonitorActive = true;
         _logger.LogInformation("Aegis Guard monitorización activa. ETW={Etw}, watchers={Watchers}", _etwActive, _watchers.Count);
 
-        await Task.WhenAll(processor, fallback, canaryLoop).ConfigureAwait(false);
+        await Task.WhenAll(_processorTask, fallback, canaryLoop, _etwTask ?? Task.CompletedTask).ConfigureAwait(false);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _state.MonitorActive = false;
         _channel.Writer.TryComplete();
+        _etwLost.TrySetResult();
+        // Drenar la cola antes de cerrar para no perder cuarentenas recientes.
+        if (_processorTask is not null)
+        {
+            try { await _processorTask.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogDebug(ex, "No se pudo drenar completamente la cola"); }
+        }
         foreach (var watcher in _watchers)
         {
             watcher.EnableRaisingEvents = false;
@@ -74,7 +86,7 @@ public sealed class MonitoringWorker : BackgroundService
         }
     }
 
-    private void StartEtw()
+    private void StartEtw(CancellationToken ct)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
         try
@@ -85,17 +97,28 @@ public sealed class MonitoringWorker : BackgroundService
             _session.EnableProvider(RegistryProvider, TraceEventLevel.Informational);
             _session.EnableProvider(DnsProvider, TraceEventLevel.Informational);
             _session.Source.Dynamic.All += OnTraceEvent;
-            _ = Task.Run(() =>
-            {
-                try { _session.Source.Process(); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Sesión ETW detenida"); }
-            });
             _etwActive = true;
+            _state.EtwActive = true;
+            _etwTask = Task.Run(() =>
+            {
+                try { _session!.Source.Process(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Sesión ETW detenida"); }
+                finally
+                {
+                    // Sin este aviso el fallback nunca arranca y la UI sigue
+                    // diciendo "protegido" aunque no haya telemetría de procesos.
+                    _etwActive = false;
+                    _state.EtwActive = false;
+                    _etwLost.TrySetResult();
+                }
+            }, ct);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "No se pudo abrir ETW; se usa monitorización de respaldo");
             _etwActive = false;
+            _state.EtwActive = false;
+            _etwLost.TrySetResult();
         }
     }
 
@@ -112,7 +135,9 @@ public sealed class MonitoringWorker : BackgroundService
                     Kind = EventKind.ProcessStarted,
                     Subject = image,
                     ProcessId = GetProcessId(data, "ProcessID", "ProcessId", "pid"),
-                    ParentProcess = GetString(data, "ParentID", "ParentId", "ppid"),
+                    // El provider entrega ParentID como PID numérico; resolverlo
+                    // a imagen permite que unusual_parent funcione con telemetría real.
+                    ParentProcess = ResolveParent(GetString(data, "ParentID", "ParentId", "ppid")),
                     Source = "etw-process"
                 });
                 return;
@@ -198,6 +223,7 @@ public sealed class MonitoringWorker : BackgroundService
                 };
                 watcher.Created += OnFileEvent;
                 watcher.Changed += OnFileEvent;
+                watcher.Deleted += OnFileEvent;
                 watcher.Renamed += (_, e) => OnFileEvent(this, new FileSystemEventArgs(WatcherChangeTypes.Created, Path.GetDirectoryName(e.FullPath) ?? string.Empty, e.Name ?? string.Empty));
                 watcher.Error += (_, e) => _logger.LogDebug(e.GetException(), "Error en FileSystemWatcher");
                 watcher.EnableRaisingEvents = true;
@@ -214,6 +240,7 @@ public sealed class MonitoringWorker : BackgroundService
 
         if (_canary.IsCanary(e.FullPath))
         {
+            if (!_canary.WasModified(e.FullPath)) return;
             Enqueue(new Observation
             {
                 Kind = EventKind.FileModified,
@@ -224,6 +251,7 @@ public sealed class MonitoringWorker : BackgroundService
             return;
         }
 
+        if (e.ChangeType == WatcherChangeTypes.Deleted) return;
         Enqueue(new Observation
         {
             Kind = e.ChangeType == WatcherChangeTypes.Created ? EventKind.FileCreated : EventKind.FileModified,
@@ -234,33 +262,64 @@ public sealed class MonitoringWorker : BackgroundService
 
     private async Task StartProcessSnapshotAsync(CancellationToken ct)
     {
-        if (_etwActive) return;
-        var known = new HashSet<int>(Process.GetProcesses().Select(p => p.Id));
+        if (_etwActive)
+        {
+            using var registration = ct.Register(() => _etwLost.TrySetResult());
+            await _etwLost.Task.ConfigureAwait(false);
+            if (ct.IsCancellationRequested) return;
+            _logger.LogWarning("ETW no disponible: activada monitorización de procesos por sondeo");
+        }
+
+        var known = new HashSet<int>();
+        try
+        {
+            var initial = Process.GetProcesses();
+            try { known = initial.Select(p => p.Id).ToHashSet(); }
+            finally { foreach (var p in initial) p.Dispose(); }
+        }
+        catch (Exception ex) { _logger.LogDebug(ex, "No se pudo tomar la instantánea inicial de procesos"); }
+
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
         while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
         {
-            var current = Process.GetProcesses();
-            var currentIds = current.Select(p => p.Id).ToHashSet();
-            foreach (var id in currentIds.Except(known))
+            Process[] current = [];
+            try
             {
-                var p = current.FirstOrDefault(x => x.Id == id);
-                if (p is null) continue;
-                try
+                current = Process.GetProcesses();
+                var currentIds = new HashSet<int>();
+                foreach (var p in current)
                 {
-                    Enqueue(new Observation
-                    {
-                        Kind = EventKind.ProcessStarted,
-                        Subject = p.MainModule?.FileName ?? p.ProcessName,
-                        ProcessId = id.ToString(),
-                        ParentProcess = "unknown",
-                        Source = "process-snapshot"
-                    });
+                    try { currentIds.Add(p.Id); }
+                    catch { /* proceso terminado durante la enumeración */ }
                 }
-                catch { /* proceso protegido */ }
+                foreach (var id in currentIds.Except(known))
+                {
+                    var p = current.FirstOrDefault(x => x.Id == id);
+                    if (p is null) continue;
+                    try
+                    {
+                        Enqueue(new Observation
+                        {
+                            Kind = EventKind.ProcessStarted,
+                            Subject = p.MainModule?.FileName ?? p.ProcessName,
+                            ProcessId = id.ToString(CultureInfo.InvariantCulture),
+                            ParentProcess = "unknown",
+                            Source = "process-snapshot"
+                        });
+                    }
+                    catch { /* proceso protegido */ }
+                }
+                known = currentIds;
             }
-            known.Clear();
-            foreach (var id in currentIds) known.Add(id);
-            foreach (var p in current) p.Dispose();
+            catch (Exception ex)
+            {
+                // Un error al enumerar no debe derribar el BackgroundService.
+                _logger.LogDebug(ex, "Error en sondeo de procesos");
+            }
+            finally
+            {
+                foreach (var p in current) p.Dispose();
+            }
         }
     }
 
@@ -271,6 +330,8 @@ public sealed class MonitoringWorker : BackgroundService
         {
             foreach (var path in _canary.Paths)
             {
+                // WasModified marca el canary como ya alertado: evita una nueva
+                // amenaza cada 10 s mientras el fichero siga cifrado o borrado.
                 if (!_canary.WasModified(path)) continue;
                 Enqueue(new Observation
                 {
@@ -285,8 +346,25 @@ public sealed class MonitoringWorker : BackgroundService
 
     private void Enqueue(Observation observation)
     {
-        Interlocked.Increment(ref _state.EventsTotal);
-        _channel.Writer.TryWrite(observation);
+        // Contar solo lo que entró realmente en el canal: DropOldest descarta
+        // eventos bajo ráfaga y el KPI debe reflejarlo.
+        if (_channel.Writer.TryWrite(observation)) Interlocked.Increment(ref _state.EventsTotal);
+        else Interlocked.Increment(ref _state.DroppedEvents);
+    }
+
+    private static string? ResolveParent(string? parent)
+    {
+        if (!int.TryParse(parent, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid) || pid <= 0)
+            return parent;
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return process.MainModule?.FileName ?? process.ProcessName;
+        }
+        catch
+        {
+            return pid.ToString(CultureInfo.InvariantCulture);
+        }
     }
 
     private static string? GetString(TraceEvent data, params string[] names) =>

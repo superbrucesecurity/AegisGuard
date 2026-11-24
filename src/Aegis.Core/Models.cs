@@ -166,8 +166,10 @@ public sealed class PolicySettings
 
     public void Validate()
     {
-        MonitorThreshold = Math.Clamp(MonitorThreshold, 0, 100);
-        BlockThreshold = Math.Clamp(BlockThreshold, MonitorThreshold + 1, 100);
+        // Math.Clamp con min > max devuelve min: sin estos topes unos umbrales
+        // configurales altos dejarían toda la detección en Allow.
+        MonitorThreshold = Math.Clamp(MonitorThreshold, 0, 98);
+        BlockThreshold = Math.Clamp(BlockThreshold, MonitorThreshold + 1, 99);
         QuarantineThreshold = Math.Clamp(QuarantineThreshold, BlockThreshold + 1, 100);
         AiWeight = Math.Clamp(AiWeight, 0, 0.5);
         MaxEvents = Math.Clamp(MaxEvents, 50, 5000);
@@ -178,6 +180,7 @@ public sealed class RuntimeStatus
 {
     public bool ServiceRunning { get; set; } = true;
     public bool MonitorActive { get; set; }
+    public bool EtwActive { get; set; }
     public bool FirewallActive { get; set; }
     public bool AiReachable { get; set; }
     public string ProtectionState { get; set; } = "starting";
@@ -187,6 +190,8 @@ public sealed class RuntimeStatus
     public long EventsTotal { get; set; }
     public long ThreatsTotal { get; set; }
     public long QuarantinedTotal { get; set; }
+    public long BlockedNetworkTotal { get; set; }
+    public long DroppedEvents { get; set; }
     public long AiCallsTotal { get; set; }
     public long AiCacheHits { get; set; }
     public List<double> RiskTrend { get; set; } = [];

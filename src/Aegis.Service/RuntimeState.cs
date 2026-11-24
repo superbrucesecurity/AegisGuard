@@ -8,12 +8,14 @@ public sealed class RuntimeState
     public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
     public PolicySettings Policy { get; private set; } = new();
     public bool MonitorActive { get; set; }
+    public bool EtwActive { get; set; }
     public bool AiReachable { get; set; }
 
     public long EventsTotal;
     public long ThreatsTotal;
     public long QuarantinedTotal;
     public long BlockedNetworkTotal;
+    public long DroppedEvents;
     public long AiCacheHits;
     public readonly List<double> RiskTrend = [];
 
@@ -52,7 +54,7 @@ public sealed class RuntimeState
 
     public RuntimeStatus Snapshot(IAiClassifier ai, bool firewallActive)
     {
-        var process = System.Diagnostics.Process.GetCurrentProcess();
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
         var policy = GetPolicy();
         double cpu;
         try
@@ -61,8 +63,13 @@ public sealed class RuntimeState
         }
         catch { cpu = 0; }
 
+        List<double> trend;
+        lock (_gate) trend = [.. RiskTrend];
+
         string state;
-        if (!MonitorActive) state = "degraded";
+        // Sin ETW se mantiene el sondeo de procesos y los watchers, pero la
+        // telemetría es menos precisa: el estado debe reflejarlo, no "protegido".
+        if (!MonitorActive || !EtwActive) state = "degraded";
         else if (!firewallActive) state = "limited";
         else if (policy.LearningMode) state = "learning";
         else state = "protected";
@@ -71,6 +78,7 @@ public sealed class RuntimeState
         {
             ServiceRunning = true,
             MonitorActive = MonitorActive,
+            EtwActive = EtwActive,
             FirewallActive = firewallActive,
             AiReachable = AiReachable,
             ProtectionState = state,
@@ -80,9 +88,11 @@ public sealed class RuntimeState
             EventsTotal = Interlocked.Read(ref EventsTotal),
             ThreatsTotal = Interlocked.Read(ref ThreatsTotal),
             QuarantinedTotal = Interlocked.Read(ref QuarantinedTotal),
+            BlockedNetworkTotal = Interlocked.Read(ref BlockedNetworkTotal),
+            DroppedEvents = Interlocked.Read(ref DroppedEvents),
             AiCallsTotal = ai is LiquidGatewayClient client ? client.Calls : 0,
             AiCacheHits = ai is LiquidGatewayClient c2 ? c2.CacheHits : 0,
-            RiskTrend = [.. RiskTrend],
+            RiskTrend = trend,
             Policy = policy
         };
     }

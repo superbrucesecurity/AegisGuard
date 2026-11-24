@@ -10,6 +10,7 @@ public sealed class ConfigStore
 {
     private static readonly byte[] Entropy = "AegisGuard.Config.v1"u8.ToArray();
     private readonly string _path;
+    private readonly object _saveGate = new();
     private AppConfig _config;
 
     private ConfigStore(string path, AppConfig config)
@@ -54,9 +55,12 @@ public sealed class ConfigStore
 
     private void Save()
     {
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(_config, JsonDefaults.Options));
-        File.Move(temp, _path, true);
+        lock (_saveGate)
+        {
+            var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(_config, JsonDefaults.Options));
+            File.Move(temp, _path, true);
+        }
     }
 
     private static PolicySettings Clone(PolicySettings p) => new()

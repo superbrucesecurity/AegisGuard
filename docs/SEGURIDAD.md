@@ -2,10 +2,10 @@
 
 ## Claves
 
-- `LIQUID_API_KEY` existe únicamente en `C:\ProgramData\AegisGuard\gateway.env`, legible por SYSTEM, administradores y el usuario instalador.
+- `LIQUID_API_KEY` existe únicamente en `%AEGIS_DATA_DIR%\gateway.env` (por defecto `C:\ProgramData\AegisGuard\gateway.env`), legible por SYSTEM, administradores y el usuario instalador.
 - `Aegis.Service` solo recibe `AEGIS_GATEWAY_KEY`, una clave aleatoria de 256 bits que persiste cifrada con DPAPI `LocalMachine` en `config.json`.
-- La UI no conoce la clave de pasarela: recibe un token local efímero desde el archivo `ui-token`, inyectado por WebView2 en la página cargada.
-- El token local se rota al regenerarse; no se envía fuera de `127.0.0.1`.
+- La UI no conoce la clave de pasarela: recibe el token local del archivo `ui-token`, inyectado por WebView2 en la página cargada.
+- El token local **no es efímero**: se genera al arrancar el servicio y permanece válido hasta el siguiente arranque. No se envía fuera de `127.0.0.1`; reinicie el servicio para invalidarlo.
 
 ## Minimización de datos
 

@@ -2,7 +2,7 @@
 
 Vertical slice funcional de un EDR/XDR para Windows construido con .NET nativo y WebView2. Prioriza evidencia local verificable; la IA cloud (Liquid AI `d1.2-ultra`) es un clasificador probabilístico que **nunca** puede bloquear o poner en cuarentena por sí solo.
 
-Publicación prevista en la cuenta de GitHub `superbrucesecurity` (`https://github.com/superbrucesecurity`). Este repositorio local está preparado para subirse cuando se confirme el nombre del repositorio remoto.
+Repositorio público: `https://github.com/superbrucesecurity/AegisGuard`.
 
 ## Cómo funciona
 
@@ -41,17 +41,17 @@ $env:LIQUID_API_KEY = [Net.NetworkCredential]::new('', (Read-Host -AsSecureStrin
 .\deploy\install.cmd
 ```
 
-`install.cmd` publica los tres ejecutables en `C:\Program Files\AegisGuard`, crea `C:\ProgramData\AegisGuard`, escribe `gateway.env` con la clave de Liquid y una clave de pasarela aleatoria, y genera los `.cmd` de arranque. La protección adicional de la clave se configura al iniciar el servicio por primera vez (DPAPI `LocalMachine`).
+`install.cmd` publica los tres ejecutables en `C:\Program Files\AegisGuard`, crea `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`), escribe `gateway.env` con la clave de Liquid y una clave de pasarela aleatoria, y genera los `.cmd` de arranque. Estos `.cmd` exportan `AEGIS_DATA_DIR` y `AEGIS_RULES_DIR` para que los binarios usen exactamente las mismas rutas aisladas. La clave de pasarela se cifra con DPAPI `LocalMachine` al iniciar el servicio por primera vez, y `gateway.env` queda restringido desde el momento de su creación.
 
 Después, ejecute `finish.cmd` como administrador para restringir ACL, registrar las tareas de inicio de sesión y crear los accesos directos. Se mantiene como paso separado porque algunos productos de seguridad bloquean scripts que combinan elevación, ACL y persistencia en un único archivo. Acepta argumentos opcionales para pruebas aisladas: `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME]`; sin ellos usa las rutas y nombres de producción.
 
-El instalador y el desinstalador aceptan `-InstallDir` y `-DataDir`, por lo que pueden verificarse en una carpeta temporal sin modificar `C:\Program Files` ni `C:\ProgramData`. El ciclo completo (instalar → `finish` → arrancar binarios → desinstalar) se validó en una ruta aislada.
+El instalador y el desinstalador aceptan `-InstallDir` y `-DataDir`, por lo que pueden verificarse en una carpeta temporal sin modificar `C:\Program Files` ni `C:\ProgramData`. El desinstalador también admite `-TaskPrefix` y `-ShortcutName` para limpiar despliegues aislados. El ciclo completo (instalar → `finish` → arrancar binarios → desinstalar) se validó en una ruta aislada.
 
 Para desinstalar:
 
 ```powershell
 .\deploy\uninstall.cmd          # conserva cuarentena por defecto
-.\deploy\uninstall.cmd -Yes     # elimina también C:\ProgramData\AegisGuard
+.\deploy\uninstall.cmd -Yes     # elimina también %AEGIS_DATA_DIR% (por defecto C:\ProgramData\AegisGuard)
 ```
 
 ## Ejecución en desarrollo
@@ -75,18 +75,19 @@ Puestos:
 - Servicio local: `http://127.0.0.1:8787`
 - Pasarela IA: `http://127.0.0.1:8790`
 
-La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se genera en `C:\ProgramData\AegisGuard\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca se envía a la nube.
+La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se genera en `%AEGIS_DATA_DIR%\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca se envía a la nube. No es efímero: vive hasta el siguiente arranque del servicio.
 
 ## API local
 
-Todas las rutas `/api` exigen `Authorization: Bearer <ui-token>` y solo aceptan `127.0.0.1` / `localhost`.
+Todas las rutas `/api` exigen `Authorization: Bearer <ui-token>` y solo aceptan `127.0.0.1` / `localhost`. `/healthz` es público y solo confirma que el proceso responde.
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
-| GET | `/api/health` | Comprobación viva. |
+| GET | `/healthz` | Comprobación pública (sin estado interno). |
+| GET | `/api/health` | Comprobación viva con token. |
 | GET | `/api/status` | Estado, CPU, RAM, contadores y política. |
-| GET | `/api/events?limit=100` | Observaciones recientes. |
-| GET | `/api/threats?limit=100` | Solo decisiones no `Allow`. |
+| GET | `/api/events?limit=100&skip=0&severity=High&verdict=Block` | Observaciones recientes con filtros opcionales. |
+| GET | `/api/threats?limit=100&skip=0&severity=Critical` | Solo decisiones no `Allow`, con filtros opcionales. |
 | GET | `/api/quarantine` | Elementos en cuarentena. |
 | POST | `/api/quarantine/{id}/restore` | Restauración reversible. |
 | DELETE | `/api/quarantine/{id}` | Purgado definitivo. |
@@ -113,7 +114,7 @@ Después, en la UI: **Analizar archivo** y pegar la ruta. En este equipo Bitdefe
 
 ## Configuración IA
 
-`C:\ProgramData\AegisGuard\gateway.env`:
+`%AEGIS_DATA_DIR%\gateway.env` (por defecto `C:\ProgramData\AegisGuard\gateway.env`):
 
 ```text
 LIQUID_API_KEY=liquid_...

@@ -28,6 +28,7 @@ config.json
 ## Datos de ejecución
 events.jsonl
 threats.jsonl
+canaries.json
 quarantine/
 ProgramData/
 InstallDir/

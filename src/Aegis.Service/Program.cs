@@ -1,10 +1,11 @@
+using System.Text.Json;
 using Aegis.Core;
 using Aegis.Service;
 
-EnvFile.Load();
+// El servicio solo recibe la credencial de la pasarela; nunca LIQUID_API_KEY.
+EnvFile.Load(allowedKeys: new[] { "AEGIS_GATEWAY_KEY", "AEGIS_GATEWAY_URL" });
 
-var root = Environment.GetEnvironmentVariable("PROGRAMDATA") ?? @"C:\ProgramData";
-var appRoot = Path.Combine(root, "AegisGuard");
+var appRoot = AegisPaths.DataRoot;
 Directory.CreateDirectory(appRoot);
 
 var config = ConfigStore.Load(appRoot);
@@ -29,17 +30,25 @@ builder.Services.AddHostedService<MonitoringWorker>();
 
 var app = builder.Build();
 
+// AEGIS_RULES_DIR permite editar las reglas de una instalación sin reconstruir.
+var rulesDir = Environment.GetEnvironmentVariable("AEGIS_RULES_DIR");
+if (string.IsNullOrWhiteSpace(rulesDir)) rulesDir = Path.Combine(AppContext.BaseDirectory, "rules");
 var intel = app.Services.GetRequiredService<ThreatIntel>();
-intel.Load(Path.Combine(AppContext.BaseDirectory, "rules", "threat-intel.json"));
+intel.Load(Path.Combine(rulesDir, "threat-intel.json"));
 
 var yara = app.Services.GetRequiredService<YaraLiteEngine>();
-var rulesDir = Path.Combine(AppContext.BaseDirectory, "rules");
 yara.LoadDirectory(rulesDir);
 
-await app.Services.GetRequiredService<EventStore>().InitializeAsync();
+var store = app.Services.GetRequiredService<EventStore>();
+await store.InitializeAsync();
 await app.Services.GetRequiredService<QuarantineManager>().InitializeAsync();
 app.Services.GetRequiredService<RansomwareCanary>().Initialize();
-app.Services.GetRequiredService<RuntimeState>().UpdatePolicy(config.Policy);
+var state = app.Services.GetRequiredService<RuntimeState>();
+state.UpdatePolicy(config.Policy);
+// Los KPI deben reflejar el historial cargado, no solo la sesión actual.
+state.EventsTotal = store.Observations.Count;
+state.ThreatsTotal = store.Threats.Count(x => x.Decision.Verdict != Verdict.Allow);
+state.QuarantinedTotal = store.Threats.Count(x => x.Decision.Verdict is Verdict.Quarantine or Verdict.Block);
 
 app.Use(async (context, next) =>
 {
@@ -70,37 +79,85 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-var state = app.Services.GetRequiredService<RuntimeState>();
-var store = app.Services.GetRequiredService<EventStore>();
 var pipeline = app.Services.GetRequiredService<DetectionPipeline>();
 var ai = app.Services.GetRequiredService<IAiClassifier>();
 var firewall = app.Services.GetRequiredService<FirewallManager>();
 var quarantine = app.Services.GetRequiredService<QuarantineManager>();
 
+// healthz es público y no expone estado interno: solo confirma que el proceso responde.
+app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
 app.MapGet("/api/health", () => Results.Ok(new { ok = true, version = "1.0.0" }));
 
 app.MapGet("/api/status", () => Results.Json(state.Snapshot(ai, firewall.IsAvailable()), JsonDefaults.Options));
 
-app.MapGet("/api/events", (int limit = 100) =>
-    Results.Json(store.Observations.TakeLast(Math.Clamp(limit, 1, 1000)).Reverse().ToList(), JsonDefaults.Options));
+app.MapGet("/api/events", (int limit = 100, int skip = 0, string? severity = null, string? verdict = null) =>
+{
+    var threats = store.Threats;
+    var items = store.Observations
+        .Select(o =>
+        {
+            var node = JsonSerializer.SerializeToNode(o, JsonDefaults.Options)!.AsObject();
+            var decision = threats.FirstOrDefault(t =>
+                string.Equals(t.Decision.ObservationId, o.Id, StringComparison.Ordinal))?.Decision;
+            node["decision"] = decision is null
+                ? null
+                : JsonSerializer.SerializeToNode(decision, JsonDefaults.Options);
+            return (node, decision);
+        })
+        .Where(x => string.IsNullOrWhiteSpace(severity) ||
+                    string.Equals(x.decision?.Severity.ToString(), severity, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(verdict) ||
+                    string.Equals(x.decision?.Verdict.ToString(), verdict, StringComparison.OrdinalIgnoreCase))
+        .Reverse()
+        .Skip(Math.Max(0, skip))
+        .Take(Math.Clamp(limit, 1, 1000))
+        .Select(x => x.node)
+        .ToList();
+    return Results.Json(items, JsonDefaults.Options);
+});
 
-app.MapGet("/api/threats", (int limit = 100) =>
+app.MapGet("/api/threats", (int limit = 100, int skip = 0, string? severity = null) =>
     Results.Json(store.Threats
         .Where(x => x.Decision.Verdict != Verdict.Allow)
-        .TakeLast(Math.Clamp(limit, 1, 1000)).Reverse().ToList(), JsonDefaults.Options));
+        .Where(x => string.IsNullOrWhiteSpace(severity) ||
+                    string.Equals(x.Decision.Severity.ToString(), severity, StringComparison.OrdinalIgnoreCase))
+        .Reverse()
+        .Skip(Math.Max(0, skip))
+        .Take(Math.Clamp(limit, 1, 1000))
+        .ToList(), JsonDefaults.Options));
 
 app.MapGet("/api/quarantine", async () => Results.Json(await quarantine.ListAsync(), JsonDefaults.Options));
 
 app.MapPost("/api/quarantine/{id}/restore", async (string id) =>
 {
-    var restored = await quarantine.RestoreAsync(id);
-    if (!restored) return Results.NotFound(new { error = "elemento no restaurable" });
-    await store.MarkRemediatedAsync(id, "restaurado por usuario");
+    var item = await quarantine.GetAsync(id);
+    if (item is null) return Results.NotFound(new { error = "elemento no restaurable" });
+    try
+    {
+        if (!await quarantine.RestoreAsync(id))
+            return Results.NotFound(new { error = "elemento no restaurable" });
+    }
+    catch (IOException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+    // QuarantineItem.Id y ThreatRecord.Id son GUID distintos: hay que usar
+    // ThreatId para que /api/threats refleje la acción del usuario.
+    await store.MarkRemediatedAsync(item.ThreatId, "restaurado por usuario");
+    // El fichero vuelve al equipo: retirar el bloqueo de red huérfano.
+    firewall.RemoveRulesForThreat(item.ThreatId);
     return Results.Ok(new { restored = true });
 });
 
 app.MapDelete("/api/quarantine/{id}", async (string id) =>
-    await quarantine.PurgeAsync(id) ? Results.Ok(new { purged = true }) : Results.NotFound());
+{
+    var item = await quarantine.GetAsync(id);
+    if (item is null) return Results.NotFound();
+    if (!await quarantine.PurgeAsync(id)) return Results.NotFound();
+    await store.MarkRemediatedAsync(item.ThreatId, "purgado por usuario");
+    firewall.RemoveRulesForThreat(item.ThreatId);
+    return Results.Ok(new { purged = true });
+});
 
 app.MapGet("/api/firewall/rules", () => Results.Json(firewall.ListRuleNames(), JsonDefaults.Options));
 
@@ -122,8 +179,10 @@ app.MapGet("/api/settings", () => Results.Json(state.GetPolicy(), JsonDefaults.O
 
 app.MapPut("/api/settings", (PolicySettings policy) =>
 {
-    state.UpdatePolicy(policy);
+    policy.Validate();
+    // Persistir primero evita que la UI muestre valores rechazados por Validate.
     config.SavePolicy(policy);
+    state.UpdatePolicy(config.Policy);
     return Results.Ok(state.GetPolicy());
 });
 
@@ -154,6 +213,9 @@ app.MapPost("/api/ai/test", async (CancellationToken ct) =>
         BehaviorFlags = ["connectivity_test"],
         Reputation = 0.5
     };
+    // El test de conectividad debe contactar con la pasarela aunque haya una
+    // clasificación en caché para esa combinación de señales.
+    if (ai is LiquidGatewayClient client) client.InvalidateCache();
     var result = await ai.ClassifyAsync(request, ct);
     state.AiReachable = result.IsValid;
     return Results.Json(result, JsonDefaults.Options);

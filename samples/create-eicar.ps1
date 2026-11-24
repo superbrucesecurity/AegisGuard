@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Path = "$env:USERPROFILE\Desktop\Aegis-EICAR-Test.txt"
 )

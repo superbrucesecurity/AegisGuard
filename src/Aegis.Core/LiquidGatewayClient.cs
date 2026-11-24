@@ -15,13 +15,13 @@ public interface IAiClassifier
 /// Cliente del backend intermediario. El cliente Windows nunca ve la clave de
 /// Liquid AI: solo una clave de servicio rotatoria para la pasarela.
 /// </summary>
-public sealed class LiquidGatewayClient : IAiClassifier
+public sealed class LiquidGatewayClient : IAiClassifier, IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _gatewayKey;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private int _failures;
-    private DateTimeOffset _circuitOpenUntil;
+    private long _circuitOpenUntilTicks;
 
     private long _cacheHits;
     private long _calls;
@@ -47,15 +47,28 @@ public sealed class LiquidGatewayClient : IAiClassifier
         if (string.IsNullOrWhiteSpace(_gatewayKey))
             return Failure("gateway-key-missing", "La pasarela IA no está configurada");
 
-        if (DateTimeOffset.UtcNow < _circuitOpenUntil)
-            return Failure("circuit-open", "Clasificador temporalmente no disponible");
-
+        var now = DateTimeOffset.UtcNow;
         var cacheKey = BuildCacheKey(request);
-        if (_cache.TryGetValue(cacheKey, out var cached) && cached.Expires > DateTimeOffset.UtcNow)
+        // La caché se consulta antes del circuito: una clasificación válida y
+        // vigente sigue siendo útil aunque la pasarela esté temporalmente caída.
+        if (_cache.TryGetValue(cacheKey, out var cached))
         {
-            Interlocked.Increment(ref _cacheHits);
-            return cached.Value;
+            if (cached.Expires > now)
+            {
+                Interlocked.Increment(ref _cacheHits);
+                return cached.Value;
+            }
+            _cache.TryRemove(cacheKey, out _);
         }
+        if (_cache.Count > 512)
+            foreach (var stale in _cache.Where(x => x.Value.Expires <= now).Select(x => x.Key))
+                _cache.TryRemove(stale, out _);
+
+        var openUntil = Interlocked.Read(ref _circuitOpenUntilTicks);
+        if (openUntil > now.Ticks)
+            return Failure("circuit-open", "Clasificador temporalmente no disponible");
+        if (openUntil != 0 && Interlocked.CompareExchange(ref _circuitOpenUntilTicks, 0, openUntil) == openUntil)
+            Interlocked.Exchange(ref _failures, 0); // half-open: vuelve a contar desde cero
 
         Interlocked.Increment(ref _calls);
         try
@@ -86,12 +99,21 @@ public sealed class LiquidGatewayClient : IAiClassifier
                 SeverityScore = Math.Clamp(payload.SeverityScore, 0, 3),
                 LatencyMs = payload.LatencyMs,
                 RequestId = payload.RequestId ?? request.RequestId,
-                IsValid = Validate(payload),
+                // El gateway debe devolver el requestId enviado; una respuesta
+                // ajena no puede atribuirse a esta petición.
+                IsValid = Validate(payload) &&
+                          (payload.RequestId is null ||
+                           string.Equals(payload.RequestId, request.RequestId, StringComparison.Ordinal)),
                 Error = payload.Error
             };
-            if (!classification.IsValid) classification.Error ??= "Respuesta IA fuera de rango";
+            if (!classification.IsValid)
+            {
+                classification.Error ??= "Respuesta IA fuera de rango";
+                return RegisterFailure("invalid-response", classification.Error);
+            }
 
             Interlocked.Exchange(ref _failures, 0);
+            Interlocked.Exchange(ref _circuitOpenUntilTicks, 0);
             _cache[cacheKey] = new CacheEntry(classification, DateTimeOffset.UtcNow.AddMinutes(15));
             return classification;
         }
@@ -112,7 +134,8 @@ public sealed class LiquidGatewayClient : IAiClassifier
     private AiClassification RegisterFailure(string code, string message)
     {
         var failures = Interlocked.Increment(ref _failures);
-        if (failures >= 3) _circuitOpenUntil = DateTimeOffset.UtcNow.AddSeconds(30);
+        if (failures >= 3)
+            Interlocked.Exchange(ref _circuitOpenUntilTicks, DateTimeOffset.UtcNow.AddSeconds(30).Ticks);
         return Failure(code, message);
     }
 
@@ -135,9 +158,16 @@ public sealed class LiquidGatewayClient : IAiClassifier
     private static double Clamp(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
 
     private static string BuildCacheKey(CloudClassificationRequest r) =>
-        $"{r.Sha256}|{(int)r.Signature}|{r.FileType}|{r.SizeBucket}|{string.Join(',', r.BehaviorFlags.Order())}|{string.Join(',', r.RuleIds.Order())}|{(int)r.Reputation * 20}";
+        $"{r.EventKind}|{r.Sha256}|{(int)r.Signature}|{r.FileType}|{r.SizeBucket}|" +
+        $"{string.Join(',', r.BehaviorFlags.Order())}|{string.Join(',', r.RuleIds.Order())}|" +
+        $"{(int)Math.Clamp(r.Reputation, 0, 1) * 20}".Replace(",", string.Empty, StringComparison.Ordinal);
 
     private sealed record CacheEntry(AiClassification Value, DateTimeOffset Expires);
+
+    /// <summary>Fuerza una comprobación real (usada por el test de conectividad).</summary>
+    public void InvalidateCache() => _cache.Clear();
+
+    public void Dispose() => _http.Dispose();
 
     private sealed class GatewayResponse
     {

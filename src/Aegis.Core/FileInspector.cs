@@ -2,14 +2,22 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace Aegis.Core;
 
 [SupportedOSPlatform("windows")]
 public sealed class FileInspector
 {
-    private const string EicarSignature = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+    // Compuesta en tiempo de compilación a partir de bytes: un archivo con la
+    // cadena literal puede ser bloqueado por el propio antivirus del equipo.
+    private static readonly byte[] EicarSignature =
+    [
+        0x58, 0x35, 0x4F, 0x21, 0x50, 0x25, 0x40, 0x41, 0x50, 0x5B, 0x34, 0x5C, 0x50, 0x5A,
+        0x58, 0x35, 0x34, 0x28, 0x50, 0x5E, 0x29, 0x37, 0x43, 0x43, 0x29, 0x37, 0x7D, 0x24,
+        0x45, 0x49, 0x43, 0x41, 0x52, 0x2D, 0x53, 0x54, 0x41, 0x4E, 0x44, 0x41, 0x52, 0x44,
+        0x2D, 0x41, 0x4E, 0x54, 0x49, 0x56, 0x49, 0x52, 0x55, 0x53, 0x2D, 0x54, 0x45, 0x53,
+        0x54, 0x2D, 0x46, 0x49, 0x4C, 0x45, 0x21, 0x24, 0x48, 0x2B, 0x48, 0x2A
+    ];
 
     public async Task<(string sha256, long length, bool eicar)> HashAsync(string path, CancellationToken ct = default)
     {
@@ -35,7 +43,7 @@ public sealed class FileInspector
                 }
             }
             sha.TransformFinalBlock([], 0, 0);
-            eicar = Encoding.ASCII.GetString(head, 0, headLength).Contains(EicarSignature, StringComparison.Ordinal);
+            eicar = head.AsSpan(0, headLength).IndexOf(EicarSignature) >= 0;
             return (Convert.ToHexString(sha.Hash!).ToLowerInvariant(), total, eicar);
         }
         finally
@@ -54,18 +62,20 @@ public sealed class FileInspector
             return SignatureStatus.NotApplicable;
         }
 
+        var fileInfo = default(WINTRUST_FILE_INFO);
+        var data = default(WINTRUST_DATA);
         try
         {
-            var fileInfo = new WINTRUST_FILE_INFO
+            fileInfo = new WINTRUST_FILE_INFO
             {
                 cbStruct = (uint)Marshal.SizeOf<WINTRUST_FILE_INFO>(),
                 pcwszFilePath = Marshal.StringToHGlobalUni(path)
             };
-            var data = new WINTRUST_DATA
+            data = new WINTRUST_DATA
             {
                 cbStruct = (uint)Marshal.SizeOf<WINTRUST_DATA>(),
                 dwUIChoice = WtdUiNone,
-                fdwRevocationChecks = WtdRevocationCheckNone,
+                fdwRevocationChecks = WtdRevocationCheckWholeChain,
                 dwUnionChoice = WtdChoiceFile,
                 pFile = Marshal.AllocHGlobal(Marshal.SizeOf<WINTRUST_FILE_INFO>()),
                 dwStateAction = WtdStateActionVerify,
@@ -74,24 +84,36 @@ public sealed class FileInspector
             Marshal.StructureToPtr(fileInfo, data.pFile, false);
             var action = WinTrustActionGenericVerifyV2;
             var result = WinVerifyTrust(IntPtr.Zero, ref action, ref data);
-            Marshal.FreeHGlobal(data.pFile);
-            Marshal.FreeHGlobal(fileInfo.pcwszFilePath);
+            var code = unchecked((uint)result);
 
-            return result switch
-            {
-                0 => SignatureStatus.SignedTrusted,
-                unchecked((int)0x800B0100) or unchecked((int)0x800B0003) => SignatureStatus.Unsigned,
-                _ => SignatureStatus.SignedUntrusted
-            };
+            // Solo los errores de firma se consideran "firma no válida"; un error
+            // de API (CRYPT_E_FILE_ERROR, E_INVALIDARG, ...) es desconocido.
+            if (code == 0) return SignatureStatus.SignedTrusted;
+            if (code is 0x800B0100 or 0x800B0003) return SignatureStatus.Unsigned;
+            if (code == 0x80092010 || (code & 0xFFFF0000) == 0x800B0000) return SignatureStatus.SignedUntrusted;
+            return SignatureStatus.Unknown;
         }
         catch
         {
             return SignatureStatus.Unknown;
         }
+        finally
+        {
+            if (data.pFile != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(data.pFile);
+                data.pFile = IntPtr.Zero;
+            }
+            if (fileInfo.pcwszFilePath != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(fileInfo.pcwszFilePath);
+                fileInfo.pcwszFilePath = IntPtr.Zero;
+            }
+        }
     }
 
     private const uint WtdUiNone = 2;
-    private const uint WtdRevocationCheckNone = 0;
+    private const uint WtdRevocationCheckWholeChain = 1;
     private const uint WtdChoiceFile = 1;
     private const uint WtdStateActionVerify = 0;
     private const uint WtdUseSafeDllSearch = 0x00000100;

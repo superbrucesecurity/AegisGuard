@@ -65,32 +65,49 @@ public sealed class EventStore
             if (threat is null) return;
             threat.Remediated = true;
             threat.RemediationDetail = detail;
+            // Instantánea bajo el mismo candado: si se libera antes de escribir,
+            // un AppendAsync concurrente puede perderse al truncar el fichero.
+            var snapshot = _threats.Select(x => JsonSerializer.Serialize(x, JsonDefaults.Options)).ToList();
+            await FileGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await File.WriteAllTextAsync(_threatsPath, string.Join(Environment.NewLine, snapshot)).ConfigureAwait(false);
+            }
+            finally { FileGate.Release(); }
         }
         finally { _gate.Release(); }
-        await File.WriteAllTextAsync(_threatsPath, string.Join('\n', _threats.Select(x => JsonSerializer.Serialize(x, JsonDefaults.Options)))).ConfigureAwait(false);
     }
 
     private static async Task LoadAsync<T>(string path, List<T> target)
     {
         if (!File.Exists(path)) return;
+        string[] lines;
         try
         {
-            foreach (var line in await File.ReadAllLinesAsync(path).ConfigureAwait(false))
+            lines = await File.ReadAllLinesAsync(path).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                var item = JsonSerializer.Deserialize<T>(line, JsonDefaults.Options);
-                if (item is not null) target.Add(item);
+                if (JsonSerializer.Deserialize<T>(line, JsonDefaults.Options) is { } item)
+                    target.Add(item);
             }
-            if (target.Count > 5000)
+            catch (JsonException)
             {
-                var keep = target.Skip(target.Count - 5000).ToList();
-                target.Clear();
-                target.AddRange(keep);
+                // Una línea truncada por un corte de luz no descarta el resto.
             }
         }
-        catch (JsonException)
+        if (target.Count > 5000)
         {
-            // Un registro corrupto no impide arrancar; el resto se conserva.
+            var keep = target.Skip(target.Count - 5000).ToList();
+            target.Clear();
+            target.AddRange(keep);
         }
     }
 

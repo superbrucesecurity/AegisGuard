@@ -94,7 +94,7 @@ La IA **nunca** puede producir `Block` o `Quarantine` por sí sola: solo ajusta 
 
 ## 7. Interfaz y API
 
-La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). El token local se genera en `C:\ProgramData\AegisGuard\ui-token` y se inyecta en la página como `window.AEGIS_TOKEN`; nunca viaja a la nube. Todas las rutas `/api` exigen `Bearer` y solo escuchan en `127.0.0.1`.
+La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). El token local se genera en `%AEGIS_DATA_DIR%\ui-token` (por defecto `C:\ProgramData\AegisGuard\ui-token`) y se inyecta en la página como `window.AEGIS_TOKEN`; nunca viaja a la nube. Todas las rutas `/api` exigen `Bearer` y solo escuchan en `127.0.0.1`; `/healthz` es público y no expone estado.
 
 Los datos mostrados son reales: no hay valores de ejemplo ni controles decorativos.
 

@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aegis.Core;
 
-Aegis.Core.EnvFile.Load();
+Aegis.Core.EnvFile.Load(allowedKeys: new[] { "LIQUID_API_KEY", "AEGIS_GATEWAY_KEY", "LIQUID_MODEL", "ASPNETCORE_URLS" });
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -72,10 +72,15 @@ return 0;
 static bool IsValidRequest(CloudClassificationRequest r)
 {
     if (r is null) return false;
-    if (r.Sha256.Length is not 64 || !r.Sha256.All(Uri.IsHexDigit)) return false;
-    if (r.BehaviorFlags.Count > 24 || r.RuleIds.Count > 24) return false;
-    if (r.BehaviorFlags.Any(x => x.Length > 80) || r.RuleIds.Any(x => x.Length > 80)) return false;
-    if (r.SizeBucket < 0 || r.Reputation is < 0 or > 1) return false;
+    // El model binding puede entregar listas o cadenas nulas: un request malformed
+    // debe devolver 400, no una excepción no controlada (500).
+    if (string.IsNullOrEmpty(r.Sha256) || r.Sha256.Length != 64 || !r.Sha256.All(Uri.IsHexDigit)) return false;
+    if (r.FileType is null || r.RequestId is null || r.EventKind is null) return false;
+    var flags = r.BehaviorFlags ?? [];
+    var rules = r.RuleIds ?? [];
+    if (flags.Count > 24 || rules.Count > 24) return false;
+    if (flags.Any(x => x is null || x.Length > 80) || rules.Any(x => x is null || x.Length > 80)) return false;
+    if (r.SizeBucket < 0 || r.Reputation is < 0 or > 1 or double.NaN) return false;
     if (!new[] { "FileCreated", "FileModified", "ProcessStarted", "NetworkConnection", "DnsQuery", "RegistryChanged", "ServiceChanged", "PersistenceChanged", "ManualScan" }.Contains(r.EventKind)) return false;
     return true;
 }
@@ -93,6 +98,10 @@ sealed class GatewayRateLimiter
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var window = now / 60;
         var entry = _windows.AddOrUpdate(key, _ => (1, window), (_, old) => old.Window == window ? (old.Count + 1, window) : (1, window));
+        // Evita que un atacante con muchas IP crezca el diccionario sin límite.
+        if (_windows.Count > 1024)
+            foreach (var old in _windows.Where(x => x.Value.Window < window - 1).Select(x => x.Key))
+                _windows.TryRemove(old, out _);
         return entry.Count <= 120;
     }
 }
@@ -105,13 +114,20 @@ sealed class LiquidDecisionClient
     private long _calls;
     private long _suppressedUntil;
     public long Calls => Interlocked.Read(ref _calls);
-    public string? LastError { get; private set; }
+    private string? _lastError;
+    public string? LastError
+    {
+        get => Volatile.Read(ref _lastError);
+        private set => Volatile.Write(ref _lastError, value);
+    }
 
     public LiquidDecisionClient(LiquidOptions options)
     {
         _options = options;
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
+        // Una clave vacía no debe impedir que el gateway arranque en modo degradado.
+        if (options.HasKey)
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
     }
 
     public async Task<CloudClassificationResponse> ClassifyAsync(CloudClassificationRequest r, CancellationToken ct)
@@ -119,9 +135,10 @@ sealed class LiquidDecisionClient
         var started = Environment.TickCount64;
         Interlocked.Increment(ref _calls);
         var suppressedUntil = Interlocked.Read(ref _suppressedUntil);
-        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() < suppressedUntil)
+        var nowSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (nowSeconds < suppressedUntil)
         {
-            LastError = $"limitado por Liquid: reintento en {suppressedUntil - DateTimeOffset.UtcNow.ToUnixTimeSeconds()}s";
+            LastError = $"limitado por Liquid: reintento en {suppressedUntil - nowSeconds}s";
             return Fail(r, LastError);
         }
         if (!_options.HasKey)
@@ -204,18 +221,24 @@ sealed class LiquidDecisionClient
 
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
-            if (!root.TryGetProperty("answers", out var answers)) return Fail(r, "respuesta sin answers");
+            if (!TryGetChild(root, "answers", out var answers)) return Fail(r, "respuesta sin answers");
 
-            var choice = answers.GetProperty("classification");
-            var label = (choice.GetProperty("choice").GetString() ?? string.Empty).Trim().ToUpperInvariant();
-            var probs = choice.GetProperty("probabilities");
+            // Lectura tolerante: un campo ausente o con el tipo equivocado debe
+            // descartar la respuesta, no lanzar una excepción que llegue al cliente.
+            if (!TryGetChild(answers, "classification", out var choice) ||
+                !TryGetChild(choice, "probabilities", out var probs) ||
+                !TryGetChild(answers, "severity", out var severityObj) ||
+                !TryGetChild(severityObj, "score", out var severityElement))
+                return Fail(r, "respuesta IA incompleta");
+
+            var label = ReadString(choice, "choice").Trim().ToUpperInvariant();
             var clean = GetProb(probs, "CLEAN");
             var suspicious = GetProb(probs, "SUSPICIOUS");
             var malicious = GetProb(probs, "MALICIOUS");
-            var confidence = choice.TryGetProperty("confidence", out var conf) && conf.TryGetDouble(out var c) ? c : 0;
-            var noul = answers.GetProperty("malwareProbability").TryGetProperty("noul", out var n) && n.TryGetDouble(out var nd) ? nd : 0;
-            var severity = answers.GetProperty("severity").GetProperty("score").GetDouble();
-            var tokens = root.TryGetProperty("usage", out var usage) && usage.TryGetProperty("input_tokens", out var t) ? t.GetInt32() : 0;
+            var confidence = ReadDouble(choice, "confidence");
+            var noul = TryGetChild(answers, "malwareProbability", out var malwareProb) ? ReadDouble(malwareProb, "noul") : 0;
+            var severity = severityElement.ValueKind == JsonValueKind.Number && severityElement.TryGetDouble(out var sev) ? sev : 0;
+            var tokens = TryGetChild(root, "usage", out var usage) ? ReadInt(usage, "input_tokens") : 0;
 
             if (label is not ("CLEAN" or "SUSPICIOUS" or "MALICIOUS"))
             {
@@ -255,12 +278,35 @@ sealed class LiquidDecisionClient
 
     private static double GetProb(JsonElement probs, string key)
     {
-        if (probs.TryGetProperty(key, out var p) && p.TryGetDouble(out var v)) return v;
+        if (TryGetChild(probs, key, out var p) && p.ValueKind == JsonValueKind.Number && p.TryGetDouble(out var v)) return v;
+        if (probs.ValueKind != JsonValueKind.Object) return 0;
         foreach (var property in probs.EnumerateObject())
             if (string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.Number &&
                 property.Value.TryGetDouble(out var value)) return value;
         return 0;
     }
+
+    private static bool TryGetChild(JsonElement parent, string name, out JsonElement value)
+    {
+        value = default;
+        return parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(name, out value);
+    }
+
+    private static double ReadDouble(JsonElement parent, string name) =>
+        TryGetChild(parent, name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var result)
+            ? result
+            : 0;
+
+    private static int ReadInt(JsonElement parent, string name) =>
+        TryGetChild(parent, name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var result)
+            ? result
+            : 0;
+
+    private static string ReadString(JsonElement parent, string name) =>
+        TryGetChild(parent, name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
 
     private static CloudClassificationResponse Fail(CloudClassificationRequest r, string error) => new()
     {

@@ -18,8 +18,18 @@ public static class TelemetryAddress
         if (raw is byte[] bytes && bytes.Length is 4 or 16)
             return new IPAddress(bytes).ToString();
 
-        var text = raw.ToString();
+        var text = raw.ToString()?.Trim();
         if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // "1.2.3.4:443" llega en algunos payloads; normalizar ambas partes evita
+        // reglas WFP con una dirección inválida.
+        if (text.Contains(':') && text.Count(c => c == ':') == 1 && !text.StartsWith('['))
+        {
+            var separator = text.LastIndexOf(':');
+            if (separator > 0 && IPAddress.TryParse(text[..separator], out var endpointAddress))
+                return endpointAddress.ToString();
+        }
+
         if (text.Contains('.') || text.Contains(':'))
             return IPAddress.TryParse(text, out var parsed) ? parsed.ToString() : text;
 
@@ -30,13 +40,14 @@ public static class TelemetryAddress
 
     public static string? NormalizePort(object? raw)
     {
-        var text = raw?.ToString();
+        var text = raw?.ToString()?.Trim();
         if (string.IsNullOrWhiteSpace(text)) return null;
-        if (ushort.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port))
-            return port.ToString(CultureInfo.InvariantCulture);
-        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
-            return ((ushort)numeric).ToString(CultureInfo.InvariantCulture);
-        return text;
+        // Un puerto corrupto nunca debe convertirse en otro puerto válido:
+        // acabaría en una regla WFP bloqueando el servicio equivocado.
+        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric) &&
+            numeric is >= 1 and <= 65535)
+            return numeric.ToString(CultureInfo.InvariantCulture);
+        return null;
     }
 }
 
@@ -53,10 +64,15 @@ public sealed class EventDeduplicator
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         var now = Environment.TickCount64;
-        if (_cache.TryAdd(key, now)) return false;
+        if (_cache.TryAdd(key, now))
+        {
+            if (_cache.Count > 5000)
+                foreach (var expired in _cache.Where(x => now - x.Value >= windowMs).Select(x => x.Key))
+                    _cache.TryRemove(expired, out _);
+            return false;
+        }
         if (_cache.TryGetValue(key, out var last) && now - last >= windowMs && _cache.TryUpdate(key, now, last))
             return false;
-        if (_cache.Count > 5000) _cache.Clear();
         return true;
     }
 }

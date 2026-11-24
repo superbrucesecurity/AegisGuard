@@ -2,9 +2,6 @@ using System.Text.Json;
 using Aegis.Core;
 using Aegis.Service;
 
-// El servicio solo recibe la credencial de la pasarela; nunca LIQUID_API_KEY.
-EnvFile.Load(allowedKeys: new[] { "AEGIS_GATEWAY_KEY", "AEGIS_GATEWAY_URL" });
-
 var appRoot = AegisPaths.DataRoot;
 Directory.CreateDirectory(appRoot);
 
@@ -21,7 +18,6 @@ builder.Services.AddSingleton(new RuntimeState());
 builder.Services.AddSingleton(new EventStore(appRoot, config.Policy.MaxEvents));
 builder.Services.AddSingleton(new YaraLiteEngine());
 builder.Services.AddSingleton(new ThreatIntel());
-builder.Services.AddSingleton<IAiClassifier>(_ => new LiquidGatewayClient(config.GatewayUrl, config.GatewayKey));
 builder.Services.AddSingleton(new QuarantineManager(appRoot));
 builder.Services.AddSingleton(new FirewallManager());
 builder.Services.AddSingleton(new RansomwareCanary(appRoot));
@@ -56,7 +52,9 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
     context.Response.Headers["Content-Security-Policy"] =
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'";
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+        "connect-src 'self'; object-src 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; " +
+        "frame-ancestors 'none'; base-uri 'none'";
 
     if (context.Request.Path.StartsWithSegments("/api"))
     {
@@ -80,15 +78,18 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 var pipeline = app.Services.GetRequiredService<DetectionPipeline>();
-var ai = app.Services.GetRequiredService<IAiClassifier>();
 var firewall = app.Services.GetRequiredService<FirewallManager>();
 var quarantine = app.Services.GetRequiredService<QuarantineManager>();
 
 // healthz es público y no expone estado interno: solo confirma que el proceso responde.
 app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
-app.MapGet("/api/health", () => Results.Ok(new { ok = true, version = "1.0.0" }));
+app.MapGet("/api/health", () => Results.Ok(new
+{
+    ok = true,
+    version = typeof(ScanRequest).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"
+}));
 
-app.MapGet("/api/status", () => Results.Json(state.Snapshot(ai, firewall.IsAvailable()), JsonDefaults.Options));
+app.MapGet("/api/status", () => Results.Json(state.Snapshot(firewall.IsAvailable()), JsonDefaults.Options));
 
 app.MapGet("/api/events", (int limit = 100, int skip = 0, string? severity = null, string? verdict = null) =>
 {
@@ -199,26 +200,6 @@ app.MapPost("/api/scan", async (ScanRequest request, CancellationToken ct) =>
     {
         return Results.BadRequest(new { error = ex.Message });
     }
-});
-
-app.MapPost("/api/ai/test", async (CancellationToken ct) =>
-{
-    var request = new CloudClassificationRequest
-    {
-        RequestId = Guid.NewGuid().ToString("N"),
-        Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("aegis-connectivity-test"u8.ToArray())).ToLowerInvariant(),
-        FileType = "test",
-        Signature = SignatureStatus.NotApplicable,
-        EventKind = "ManualScan",
-        BehaviorFlags = ["connectivity_test"],
-        Reputation = 0.5
-    };
-    // El test de conectividad debe contactar con la pasarela aunque haya una
-    // clasificación en caché para esa combinación de señales.
-    if (ai is LiquidGatewayClient client) client.InvalidateCache();
-    var result = await ai.ClassifyAsync(request, ct);
-    state.AiReachable = result.IsValid;
-    return Results.Json(result, JsonDefaults.Options);
 });
 
 app.MapFallbackToFile("index.html");

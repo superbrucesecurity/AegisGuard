@@ -1,6 +1,6 @@
 # Aegis Guard
 
-Vertical slice funcional de un EDR/XDR para Windows construido con .NET nativo y WebView2. Prioriza evidencia local verificable; la IA cloud (Liquid AI `d1.2-ultra`) es un clasificador probabilístico que **nunca** puede bloquear o poner en cuarentena por sí solo.
+Antivirus y cortafuegos local para Windows construido con .NET nativo y WebView2. Toda la detección, la decisión y la remediación se calculan en el propio equipo: **no hay servicios de inferencia, consultas a la nube ni credenciales de API**. El producto funciona sin conexión a Internet.
 
 Repositorio público: `https://github.com/superbrucesecurity/AegisGuard`.
 
@@ -8,7 +8,7 @@ Repositorio público: `https://github.com/superbrucesecurity/AegisGuard`.
 
 [Guía completa: evento → evidencia → decisión → remediación](docs/COMO-FUNCIONA.md).
 
-En resumen: ETW, watchers y canarios generan observaciones; se normalizan y deduplican; se enriquecen con hash, firma, reputación, YARA-lite y heurística; solo una minoría se envía a la pasarela IA; un motor determinista aplica umbrales y decide `Allow`/`Monitor`/`Block`/`Quarantine`. La IA no bloquea por sí sola.
+En resumen: ETW, watchers y canarios generan observaciones; se normalizan y deduplican; se enriquecen con hash SHA-256, firma, reputación local, YARA-lite y heurística; un motor determinista aplica umbrales y decide `Allow`/`Monitor`/`Block`/`Quarantine`. El riesgo es el score calculado con esa evidencia local, sin ponderaciones externas.
 
 ## Estado de la entrega
 
@@ -19,29 +19,26 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Firewall WFP por aplicación/IP/puerto | Implementado | Vía COM `HNetCfg.FwPolicy2`, sin driver callout. |
 | Cuarentena reversible | Implementado | AES-GCM + DPAPI, rutas restringidas. |
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
-| Pasarela IA con clave separada | Implementado | `LIQUID_API_KEY` solo en `Aegis.CloudGateway`. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 29 superadas | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 42 casos | `tests/Aegis.Checks`. |
 
-**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. El consumo de RAM observado en el servicio es de ~116–166 MB (según histórico y buffer ETW), por encima del objetivo de 100 MB. Sin driver, la defensa de red depende de las reglas WFP disponibles. La clave de Liquid está configurada, pero la cuenta puede aplicar límites de tasa (HTTP 429); el sistema degrada a decisión local sin perder funcionalidad.
+**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. El objetivo de RAM en reposo es < 150 MB; el histórico del servicio en el equipo de desarrollo se movió entre ~116 y ~166 MB y aún no hay un benchmark actualizado que acredite la cifra, así que no se presenta como cumplido. Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
 
 ## Requisitos
 
 - Windows 10/11 x64.
 - .NET 10 runtime (o usar `-SelfContained` en el instalador).
 - WebView2 Evergreen Runtime para la interfaz.
-- Una clave de API de Liquid AI con acceso a `d1.2-ultra` o `d1.2`.
+- Sin cuenta, clave ni conexión a Internet.
 
 ## Instalación rápida
 
 ```powershell
-# Como administrador, cargando la clave desde su gestor de secretos:
-$env:LIQUID_API_KEY = [Net.NetworkCredential]::new('', (Read-Host -AsSecureString 'Clave Liquid')).Password
 .\deploy\install.cmd
 ```
 
-`install.cmd` publica los tres ejecutables en `C:\Program Files\AegisGuard`, crea `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`), escribe `gateway.env` con la clave de Liquid y una clave de pasarela aleatoria, y genera los `.cmd` de arranque. Estos `.cmd` exportan `AEGIS_DATA_DIR` y `AEGIS_RULES_DIR` para que los binarios usen exactamente las mismas rutas aisladas. La clave de pasarela se cifra con DPAPI `LocalMachine` al iniciar el servicio por primera vez, y `gateway.env` queda restringido desde el momento de su creación.
+`install.cmd` publica `Aegis.Service` y `Aegis.UI` en `C:\Program Files\AegisGuard`, crea `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`) con ACL restringida, copia las reglas y genera los `.cmd` de arranque. Estos `.cmd` exportan `AEGIS_DATA_DIR` y `AEGIS_RULES_DIR` para que los binarios usen exactamente las mismas rutas aisladas. No se escriben credenciales ni se contacta con servidores externos.
 
 Después, ejecute `finish.cmd` como administrador para restringir ACL, registrar las tareas de inicio de sesión y crear los accesos directos. Se mantiene como paso separado porque algunos productos de seguridad bloquean scripts que combinan elevación, ACL y persistencia en un único archivo. Acepta argumentos opcionales para pruebas aisladas: `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME]`; sin ellos usa las rutas y nombres de producción.
 
@@ -60,22 +57,16 @@ Para desinstalar:
 dotnet build AegisGuard.slnx
 dotnet test tests/Aegis.Checks/Aegis.Checks.csproj
 
-# Terminal 1: pasarela IA
-dotnet run --project src/Aegis.CloudGateway/Aegis.CloudGateway.csproj
-
-# Terminal 2: servicio local
+# Terminal 1: servicio local
 dotnet run --project src/Aegis.Service/Aegis.Service.csproj
 
-# Terminal 3: interfaz
+# Terminal 2: interfaz
 dotnet run --project src/Aegis.UI/Aegis.UI.csproj
 ```
 
-Puestos:
+Puesto: servicio local en `http://127.0.0.1:8787`.
 
-- Servicio local: `http://127.0.0.1:8787`
-- Pasarela IA: `http://127.0.0.1:8790`
-
-La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se genera en `%AEGIS_DATA_DIR%\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca se envía a la nube. No es efímero: vive hasta el siguiente arranque del servicio.
+La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se genera en `%AEGIS_DATA_DIR%\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. No es efímero: vive hasta el siguiente arranque del servicio.
 
 ## API local
 
@@ -95,7 +86,6 @@ Todas las rutas `/api` exigen `Authorization: Bearer <ui-token>` y solo aceptan 
 | GET | `/api/firewall/learned` | Conexiones vistas en modo aprendizaje. |
 | GET/PUT | `/api/settings` | Política de detección. |
 | POST | `/api/scan` | Análisis manual de un fichero. |
-| POST | `/api/ai/test` | Prueba real de clasificación cloud. |
 
 ## Prueba EICAR segura
 
@@ -112,15 +102,8 @@ Después, en la UI: **Analizar archivo** y pegar la ruta. En este equipo Bitdefe
 - [Operaciones](docs/OPERACIONES.md)
 - [Seguridad y privacidad](docs/SEGURIDAD.md)
 
-## Configuración IA
+## Configuración local
 
-`%AEGIS_DATA_DIR%\gateway.env` (por defecto `C:\ProgramData\AegisGuard\gateway.env`):
+`%AEGIS_DATA_DIR%\config.json` contiene la política de detección (umbrales, `autoQuarantine`, `autoBlockNetwork`, `learningMode` y `maxEvents`). Se puede editar desde la UI (**Configuración**) o con `PUT /api/settings`. No contiene secretos.
 
-```text
-LIQUID_API_KEY=liquid_...
-AEGIS_GATEWAY_KEY=<aleatorio de 44 caracteres>
-AEGIS_GATEWAY_URL=http://127.0.0.1:8790
-LIQUID_MODEL=d1.2-ultra
-```
-
-Si la clave copiada viene sin el prefijo `liquid`, el gateway lo restaura automáticamente. El cliente Windows solo conoce `AEGIS_GATEWAY_KEY`. En caso de `429` o `503`, la pasarela respeta `Retry-After`, abre una ventana de supresión y el motor sigue decidiendo con evidencia local.
+Las detecciones se basan en los archivos de `%AEGIS_RULES_DIR%` (por defecto `C:\Program Files\AegisGuard\rules`): reglas `*.yar` (YARA-lite), `threat-intel.json` (hashes, dominios y direcciones IP) y `eicar.yar`. En tiempo de ejecución no se descarga nada. Cualquier actualización futura de firmas deberá ser firmada, verificable y opcional: la protección local no dependerá de ella.

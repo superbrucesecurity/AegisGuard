@@ -11,12 +11,11 @@ public sealed class DecisionEngineTests
         MonitorThreshold = 25,
         BlockThreshold = 58,
         QuarantineThreshold = 80,
-        AiWeight = 0.3,
         AutoQuarantine = true
     };
 
     [Fact]
-    public void CleanObservationWithoutAiIsAllowed()
+    public void CleanObservationIsAllowed()
     {
         var observation = new Observation
         {
@@ -25,7 +24,7 @@ public sealed class DecisionEngineTests
             Signature = SignatureStatus.SignedTrusted
         };
         var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var decision = _engine.Decide(observation, local, new AiClassification(), _policy);
+        var decision = _engine.Decide(observation, local, _policy);
 
         Assert.Equal(Verdict.Allow, decision.Verdict);
         Assert.Equal(Severity.Info, decision.Severity);
@@ -33,37 +32,13 @@ public sealed class DecisionEngineTests
     }
 
     [Fact]
-    public void AiAloneNeverBlocksOrQuarantines()
-    {
-        var observation = new Observation { Kind = EventKind.ManualScan, Subject = @"C:\Temp\unknown.bin" };
-        var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var ai = new AiClassification
-        {
-            IsValid = true,
-            Model = "d1.2-ultra",
-            ChoiceLabel = "MALICIOUS",
-            Malicious = 0.97,
-            Suspicious = 0.02,
-            Clean = 0.01,
-            Confidence = 0.95,
-            SeverityScore = 3
-        };
-
-        var decision = _engine.Decide(observation, local, ai, _policy);
-
-        Assert.Equal(Verdict.Monitor, decision.Verdict);
-        Assert.True(decision.AiWasDecisive);
-        Assert.DoesNotContain(decision.Verdict, new[] { Verdict.Block, Verdict.Quarantine });
-    }
-
-    [Fact]
-    public void KnownMaliciousHashForcesQuarantineEvenWithoutAi()
+    public void KnownMaliciousHashForcesQuarantine()
     {
         const string hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";
         var observation = new Observation { Kind = EventKind.FileCreated, Subject = @"C:\Users\test\eicar.txt", Sha256 = hash };
         var hashes = new HashSet<string>([hash], StringComparer.OrdinalIgnoreCase);
         var local = _engine.Assess(observation, [], hashes);
-        var decision = _engine.Decide(observation, local, new AiClassification { Error = "sin conexión" }, _policy);
+        var decision = _engine.Decide(observation, local, _policy);
 
         Assert.True(local.HasCriticalIndicator);
         Assert.Equal(Verdict.Quarantine, decision.Verdict);
@@ -77,29 +52,15 @@ public sealed class DecisionEngineTests
         var observation = new Observation { Kind = EventKind.ManualScan, Subject = @"C:\Users\test\sospechoso.exe" };
         var rules = new[] { new RuleMatch { RuleId = "Mimikatz_Indicators", Name = "Mimikatz", Severity = Severity.Critical } };
         var local = _engine.Assess(observation, rules, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var decision = _engine.Decide(observation, local, new AiClassification(), _policy);
+        var decision = _engine.Decide(observation, local, _policy);
 
         Assert.Equal(Verdict.Quarantine, decision.Verdict);
         Assert.Contains(decision.Reasons, r => r.Contains("Mimikatz_Indicators", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void PolicyValidationKeepsThresholdsOrdered()
+    public void MediumRulesOnlyRaiseMonitoring()
     {
-        var policy = new PolicySettings { MonitorThreshold = 90, BlockThreshold = 10, QuarantineThreshold = 20, AiWeight = 4, MaxEvents = 99999 };
-        policy.Validate();
-
-        Assert.True(policy.MonitorThreshold < policy.BlockThreshold);
-        Assert.True(policy.BlockThreshold < policy.QuarantineThreshold);
-        Assert.True(policy.QuarantineThreshold <= 100);
-        Assert.Equal(0.5, policy.AiWeight);
-        Assert.Equal(5000, policy.MaxEvents);
-    }
-
-    [Fact]
-    public void AiCannotPushInsufficientLocalEvidenceToBlockOrQuarantine()
-    {
-        // Dos reglas Medium (44) más IA máxima daban risk 60.8 -> Block antes.
         var observation = new Observation { Kind = EventKind.ManualScan, Subject = @"C:\Temp\sample.bin" };
         var rules = new[]
         {
@@ -107,35 +68,56 @@ public sealed class DecisionEngineTests
             new RuleMatch { RuleId = "R2", Name = "R2", Severity = Severity.Medium }
         };
         var local = _engine.Assess(observation, rules, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var ai = new AiClassification
-        {
-            IsValid = true, ChoiceLabel = "MALICIOUS", Malicious = 1, Suspicious = 0,
-            Clean = 0, Confidence = 1, SeverityScore = 3
-        };
-
-        var decision = _engine.Decide(observation, local, ai, _policy);
 
         Assert.Equal(44, local.Score);
-        Assert.Equal(Verdict.Monitor, decision.Verdict);
-        Assert.DoesNotContain(decision.Verdict, new[] { Verdict.Block, Verdict.Quarantine });
+        Assert.Equal(Verdict.Monitor, _engine.Decide(observation, local, _policy).Verdict);
     }
 
     [Fact]
-    public void CriticalHashBlocksWhenQuarantineDisabledEvenIfAiSaysClean()
+    public void CriticalHashBlocksWhenQuarantineDisabled()
     {
         const string hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";
         var policy = new PolicySettings
         {
-            LearningMode = false, AutoQuarantine = false, AiWeight = 0.5,
-            MonitorThreshold = 25, BlockThreshold = 58, QuarantineThreshold = 80
+            LearningMode = false,
+            AutoQuarantine = false,
+            MonitorThreshold = 25,
+            BlockThreshold = 58,
+            QuarantineThreshold = 80
         };
         var observation = new Observation { Kind = EventKind.FileCreated, Subject = @"C:\Temp\eicar.txt", Sha256 = hash };
         var local = _engine.Assess(observation, [], new HashSet<string>([hash], StringComparer.OrdinalIgnoreCase));
-        var ai = new AiClassification { IsValid = true, ChoiceLabel = "CLEAN", Clean = 1, Confidence = 1 };
 
-        var decision = _engine.Decide(observation, local, ai, policy);
+        Assert.Equal(Verdict.Block, _engine.Decide(observation, local, policy).Verdict);
+    }
 
-        Assert.Equal(Verdict.Block, decision.Verdict);
+    [Fact]
+    public void UnimplementedBehaviorFlagsDoNotCreateCriticalEvidence()
+    {
+        var observation = new Observation
+        {
+            Kind = EventKind.ProcessStarted,
+            Subject = @"C:\Program Files\App\app.exe",
+            Signature = SignatureStatus.SignedTrusted,
+            BehaviorFlags = ["process_injection", "av_tampering", "rootkit"]
+        };
+        var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        Assert.Equal(24, local.Score);
+        Assert.False(local.HasCriticalIndicator);
+        Assert.Equal(Verdict.Allow, _engine.Decide(observation, local, _policy).Verdict);
+    }
+
+    [Fact]
+    public void PolicyValidationKeepsThresholdsOrdered()
+    {
+        var policy = new PolicySettings { MonitorThreshold = 90, BlockThreshold = 10, QuarantineThreshold = 20, MaxEvents = 99999 };
+        policy.Validate();
+
+        Assert.True(policy.MonitorThreshold < policy.BlockThreshold);
+        Assert.True(policy.BlockThreshold < policy.QuarantineThreshold);
+        Assert.True(policy.QuarantineThreshold <= 100);
+        Assert.Equal(5000, policy.MaxEvents);
     }
 
     [Fact]
@@ -182,7 +164,7 @@ public sealed class DecisionEngineTests
         var observation = new Observation { Kind = EventKind.DnsQuery, Subject = "example.invalid", BehaviorFlags = ["c2_beacon"] };
         var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         var started = System.Diagnostics.Stopwatch.StartNew();
-        for (var i = 0; i < 5000; i++) _engine.Decide(observation, local, new AiClassification(), _policy);
+        for (var i = 0; i < 5000; i++) _engine.Decide(observation, local, _policy);
         started.Stop();
 
         Assert.True(started.Elapsed < TimeSpan.FromSeconds(5), $"5000 decisiones tardaron {started.ElapsedMilliseconds} ms");

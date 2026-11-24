@@ -15,14 +15,10 @@ if "%SHORTCUTNAME%"=="" set "SHORTCUTNAME=Aegis Guard"
 for /f %%u in ('powershell.exe -NoProfile -Command "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"') do set "USERSID=*%%u"
 
 echo Restringiendo permisos de %DATADIR%...
-icacls "%DATADIR%" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "%USERSID%:(OI)(CI)F" >nul
-if errorlevel 1 goto :fail
-if exist "%DATADIR%\gateway.env" icacls "%DATADIR%\gateway.env" /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" "%USERSID%:F" >nul
+icacls "%DATADIR%" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "%USERSID%:(OI)(CI)F" /T >nul
 if errorlevel 1 goto :fail
 
 echo Registrando arranque automatico...
-schtasks /Create /TN "%TASKPREFIX% Gateway" /TR "\"%INSTALLDIR%\run-gateway.cmd\"" /SC ONLOGON /RL HIGHEST /F >nul
-if errorlevel 1 goto :fail
 schtasks /Create /TN "%TASKPREFIX% Service" /TR "\"%INSTALLDIR%\run-service.cmd\"" /SC ONLOGON /RL HIGHEST /F >nul
 if errorlevel 1 goto :fail
 

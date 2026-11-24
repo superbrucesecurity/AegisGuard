@@ -88,21 +88,6 @@ public sealed class ScoreContribution
     public double Weight { get; set; }
 }
 
-public sealed class AiClassification
-{
-    public string Model { get; set; } = "none";
-    public string ChoiceLabel { get; set; } = "INDETERMINATE";
-    public double Clean { get; set; }
-    public double Suspicious { get; set; }
-    public double Malicious { get; set; }
-    public double Confidence { get; set; }
-    public double SeverityScore { get; set; }
-    public bool IsValid { get; set; }
-    public string? Error { get; set; }
-    public long LatencyMs { get; set; }
-    public string RequestId { get; set; } = string.Empty;
-}
-
 public sealed class DecisionResult
 {
     public string ObservationId { get; set; } = string.Empty;
@@ -112,9 +97,7 @@ public sealed class DecisionResult
     public double Risk { get; set; }
     public double Confidence { get; set; }
     public LocalAssessment Local { get; set; } = new();
-    public AiClassification Ai { get; set; } = new();
     public List<string> Reasons { get; set; } = [];
-    public bool AiWasDecisive { get; set; }
 }
 
 public sealed class ThreatRecord
@@ -154,24 +137,20 @@ public sealed class FirewallRuleSpec
 
 public sealed class PolicySettings
 {
-    public bool AiEnabled { get; set; } = true;
     public bool LearningMode { get; set; } = true;
     public bool AutoQuarantine { get; set; } = true;
     public bool AutoBlockNetwork { get; set; } = true;
     public double MonitorThreshold { get; set; } = 25;
     public double BlockThreshold { get; set; } = 58;
     public double QuarantineThreshold { get; set; } = 80;
-    public double AiWeight { get; set; } = 0.3;
     public int MaxEvents { get; set; } = 500;
 
     public void Validate()
     {
-        // Math.Clamp con min > max devuelve min: sin estos topes unos umbrales
-        // configurales altos dejarían toda la detección en Allow.
+        // Evita que umbrales mal configurados dejen toda la detección en Allow.
         MonitorThreshold = Math.Clamp(MonitorThreshold, 0, 98);
         BlockThreshold = Math.Clamp(BlockThreshold, MonitorThreshold + 1, 99);
         QuarantineThreshold = Math.Clamp(QuarantineThreshold, BlockThreshold + 1, 100);
-        AiWeight = Math.Clamp(AiWeight, 0, 0.5);
         MaxEvents = Math.Clamp(MaxEvents, 50, 5000);
     }
 }
@@ -182,7 +161,6 @@ public sealed class RuntimeStatus
     public bool MonitorActive { get; set; }
     public bool EtwActive { get; set; }
     public bool FirewallActive { get; set; }
-    public bool AiReachable { get; set; }
     public string ProtectionState { get; set; } = "starting";
     public DateTimeOffset StartedAt { get; set; }
     public double CpuPercent { get; set; }
@@ -192,39 +170,8 @@ public sealed class RuntimeStatus
     public long QuarantinedTotal { get; set; }
     public long BlockedNetworkTotal { get; set; }
     public long DroppedEvents { get; set; }
-    public long AiCallsTotal { get; set; }
-    public long AiCacheHits { get; set; }
     public List<double> RiskTrend { get; set; } = [];
     public PolicySettings Policy { get; set; } = new();
-}
-
-public sealed class CloudClassificationRequest
-{
-    public string RequestId { get; set; } = string.Empty;
-    public string Sha256 { get; set; } = string.Empty;
-    public string FileType { get; set; } = string.Empty;
-    public long SizeBucket { get; set; }
-    public SignatureStatus Signature { get; set; }
-    public double Reputation { get; set; }
-    public List<string> BehaviorFlags { get; set; } = [];
-    public List<string> RuleIds { get; set; } = [];
-    public string EventKind { get; set; } = string.Empty;
-}
-
-public sealed class CloudClassificationResponse
-{
-    public string RequestId { get; set; } = string.Empty;
-    public string Model { get; set; } = string.Empty;
-    public string ChoiceLabel { get; set; } = "INDETERMINATE";
-    public double Clean { get; set; }
-    public double Suspicious { get; set; }
-    public double Malicious { get; set; }
-    public double Confidence { get; set; }
-    public double SeverityScore { get; set; }
-    public bool IsValid { get; set; }
-    public string? Error { get; set; }
-    public long LatencyMs { get; set; }
-    public int InputTokens { get; set; }
 }
 
 public static class JsonDefaults

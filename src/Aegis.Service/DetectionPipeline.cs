@@ -9,7 +9,6 @@ public sealed class DetectionPipeline
     private readonly DecisionEngine _decision = new();
     private readonly YaraLiteEngine _yara;
     private readonly ThreatIntel _intel;
-    private readonly IAiClassifier _ai;
     private readonly QuarantineManager _quarantine;
     private readonly EventStore _store;
     private readonly RuntimeState _state;
@@ -21,7 +20,6 @@ public sealed class DetectionPipeline
     public DetectionPipeline(
         YaraLiteEngine yara,
         ThreatIntel intel,
-        IAiClassifier ai,
         QuarantineManager quarantine,
         EventStore store,
         RuntimeState state,
@@ -31,7 +29,6 @@ public sealed class DetectionPipeline
     {
         _yara = yara;
         _intel = intel;
-        _ai = ai;
         _quarantine = quarantine;
         _store = store;
         _state = state;
@@ -51,8 +48,7 @@ public sealed class DetectionPipeline
         await EnrichAsync(observation, ruleMatches, ct).ConfigureAwait(false);
 
         var local = _decision.Assess(observation, ruleMatches, _intel.SnapshotHashes());
-        var ai = await ClassifyIfNeededAsync(observation, local, ruleMatches, policy, ct).ConfigureAwait(false);
-        var decision = _decision.Decide(observation, local, ai, policy);
+        var decision = _decision.Decide(observation, local, policy);
 
         await _store.AppendAsync(observation).ConfigureAwait(false);
 
@@ -138,37 +134,6 @@ public sealed class DetectionPipeline
         }
     }
 
-    private async Task<AiClassification> ClassifyIfNeededAsync(
-        Observation o, LocalAssessment local, List<RuleMatch> matches, PolicySettings policy, CancellationToken ct)
-    {
-        if (!policy.AiEnabled)
-            return new AiClassification { IsValid = false, Error = "IA desactivada por política" };
-
-        // Solo se envían a la nube eventos con indicios locales significativos:
-        // Evita coste y exposición innecesaria de telemetría cotidiana.
-        var needsAi = local.Score >= 20 || o.BehaviorFlags.Count > 0 ||
-                      o.Kind is EventKind.ManualScan or EventKind.PersistenceChanged;
-        if (!needsAi)
-            return new AiClassification { IsValid = false, Error = "no enviado: sin indicios locales" };
-
-        var request = new CloudClassificationRequest
-        {
-            RequestId = o.Id,
-            Sha256 = o.Sha256 ?? SHA256Placeholder(o.Subject),
-            FileType = o.FileExtension?.TrimStart('.').ToLowerInvariant() ?? o.Kind.ToString(),
-            SizeBucket = o.FileSize / 4096,
-            Signature = o.Signature,
-            Reputation = o.Reputation,
-            BehaviorFlags = o.BehaviorFlags.Take(16).ToList(),
-            RuleIds = matches.Select(x => x.RuleId).Take(16).ToList(),
-            EventKind = o.Kind.ToString()
-        };
-
-        var result = await _ai.ClassifyAsync(request, ct).ConfigureAwait(false);
-        _state.AiReachable = result.IsValid;
-        return result;
-    }
-
     private async Task ApplyRemediationAsync(ThreatRecord threat, PolicySettings policy, CancellationToken ct)
     {
         var o = threat.Observation;
@@ -237,11 +202,6 @@ public sealed class DetectionPipeline
         }
     }
 
-    private static string SHA256Placeholder(string subject)
-    {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(subject.ToLowerInvariant());
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
-    }
 }
 
 public sealed class LearnedConnection

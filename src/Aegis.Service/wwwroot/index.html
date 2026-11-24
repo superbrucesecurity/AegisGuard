@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <title>AEGIS Guard · Protección integral</title>
+  <title>AEGIS Guard · Protección local</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230ea5e9' d='M12 2 20 5v6c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5l8-3Z'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -33,7 +33,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <span class="brand-mark"><svg><use href="#i-shield"/></svg></span>
-        <span class="brand-text"><strong>AEGIS</strong><small>NEXT-GEN SECURITY</small></span>
+        <span class="brand-text"><strong>AEGIS</strong><small>DEFENSA LOCAL</small></span>
       </div>
       <nav class="nav" aria-label="Navegación principal">
         <button class="nav-item active" data-view="dashboard" aria-current="page"><svg><use href="#i-grid"/></svg><span>Resumen</span></button>
@@ -72,11 +72,10 @@
             <div class="hero-copy">
               <span class="eyebrow">Estado del sistema</span>
               <h2 id="heroTitle">Iniciando motor…</h2>
-              <p id="heroDescription">Comprobando monitorización, firewall y clasificador en la nube.</p>
+              <p id="heroDescription">Comprobando monitorización, firewall y reglas locales.</p>
               <div class="hero-tags" id="heroTags"></div>
               <div class="hero-actions">
                 <button class="btn primary" data-go="analysis">Analizar un archivo <svg><use href="#i-arrow"/></svg></button>
-                <button class="btn ghost" id="testAiBtn">Probar IA</button>
               </div>
             </div>
             <div class="shield-visual" aria-hidden="true">
@@ -94,7 +93,7 @@
             <article class="card kpi"><span>Eventos analizados</span><strong id="kpiEvents">—</strong><small>monitorización en tiempo real</small></article>
             <article class="card kpi"><span>Amenazas detectadas</span><strong id="kpiThreats">—</strong><small>con evidencia local</small></article>
             <article class="card kpi"><span>Bloqueos de red</span><strong id="kpiBlocks">—</strong><small>reglas WFP creadas</small></article>
-            <article class="card kpi"><span>Huella en reposo</span><strong id="kpiResources">—</strong><small>CPU / RAM del servicio</small></article>
+            <article class="card kpi"><span>Huella del servicio</span><strong id="kpiResources">—</strong><small>CPU media desde inicio / RAM actual</small></article>
           </div>
         </div>
 
@@ -116,7 +115,7 @@
       </section>
 
       <section class="view" id="view-analysis">
-        <div class="page-intro"><span class="eyebrow">Análisis bajo demanda</span><h2>Inspecciona un archivo</h2><p>Se calcula el hash, se comprueba la firma, se aplican reglas locales y, solo si hay indicios, se consulta al clasificador en la nube.</p></div>
+        <div class="page-intro"><span class="eyebrow">Análisis bajo demanda</span><h2>Inspecciona un archivo</h2><p>Se calcula el hash, se comprueba la firma y se aplican las reglas y listas locales. No se envía información a ningún servidor.</p></div>
         <article class="card form-card">
           <label for="scanPath">Ruta completa del archivo</label>
           <div class="inline-form"><input id="scanPath" type="text" placeholder="C:\Users\...\archivo.exe" autocomplete="off" /><button class="btn primary" id="scanBtn">Analizar ahora</button></div>
@@ -127,7 +126,7 @@
           <div class="score-layout">
             <div class="score-block"><span>Riesgo total</span><strong id="scanRisk">—</strong><div class="meter"><i id="scanRiskBar"></i></div></div>
             <div class="score-block"><span>Confianza</span><strong id="scanConfidence">—</strong><div class="meter"><i id="scanConfidenceBar"></i></div></div>
-            <div class="score-block"><span>IA</span><strong id="scanAi">—</strong><small id="scanAiDetail">—</small></div>
+            <div class="score-block"><span>Evidencias</span><strong id="scanEvidence">—</strong><small id="scanEvidenceDetail">—</small></div>
           </div>
           <div class="evidence"><h4>Motivos de la decisión</h4><ul id="scanReasons"></ul></div>
           <dl class="meta-list" id="scanMeta"></dl>
@@ -156,7 +155,7 @@
       </section>
 
       <section class="view" id="view-threats">
-        <div class="page-intro"><span class="eyebrow">Centro de amenazas</span><h2>Amenazas detectadas</h2><p>Cada entrada incluye la evidencia local, la probabilidad de IA y la acción aplicada.</p></div>
+        <div class="page-intro"><span class="eyebrow">Centro de amenazas</span><h2>Amenazas detectadas</h2><p>Cada entrada incluye la evidencia local, el riesgo calculado y la acción aplicada.</p></div>
         <article class="card table-card">
           <div class="card-head"><div><span class="eyebrow">Detectadas</span><h3>Hallazgos recientes</h3></div><select id="threatFilter" aria-label="Filtrar por severidad"><option value="all">Todas</option><option value="Critical">Críticas</option><option value="High">Altas</option><option value="Medium">Medias</option></select></div>
           <div class="table-scroll tall"><table class="data-table"><thead><tr><th>Hora</th><th>Objeto</th><th>Severidad</th><th>Decisión</th><th>Riesgo</th><th></th></tr></thead><tbody id="threatsBody"></tbody></table></div>
@@ -184,7 +183,6 @@
         <div class="page-intro"><span class="eyebrow">Políticas verificables</span><h2>Configuración</h2><p>Los cambios se guardan en la configuración protegida del servicio y se aplican de inmediato.</p></div>
         <article class="card form-card">
           <h3>Comportamiento</h3>
-          <label class="switch-row"><span><strong>Clasificador IA en la nube</strong><small>Envía solo metadatos; nunca el contenido del archivo.</small></span><input type="checkbox" id="setAi" /></label>
           <label class="switch-row"><span><strong>Modo aprendizaje</strong><small>Observa conexiones nuevas sin bloquearlas.</small></span><input type="checkbox" id="setLearning" /></label>
           <label class="switch-row"><span><strong>Cuarentena automática</strong><small>Aísla archivos con evidencia crítica y reversible.</small></span><input type="checkbox" id="setQuarantine" /></label>
           <label class="switch-row"><span><strong>Bloqueo de red automático</strong><small>Crea reglas WFP ante conexiones maliciosas confirmadas.</small></span><input type="checkbox" id="setBlock" /></label>
@@ -192,7 +190,6 @@
           <label class="range-row"><span>Monitorizar <output id="outMonitor"></output></span><input type="range" id="setMonitor" min="5" max="70" /></label>
           <label class="range-row"><span>Bloquear <output id="outBlock"></output></span><input type="range" id="setBlockThreshold" min="20" max="95" /></label>
           <label class="range-row"><span>Cuarentena <output id="outQuarantine"></output></span><input type="range" id="setQuarantineThreshold" min="40" max="100" /></label>
-          <label class="range-row"><span>Peso de la IA <output id="outAiWeight"></output></span><input type="range" id="setAiWeight" min="0" max="50" /></label>
           <button class="btn primary" id="saveSettings">Guardar cambios</button>
         </article>
       </section>
@@ -202,7 +199,7 @@
         <div class="help-grid">
           <article class="card help-card"><span class="help-num">01</span><h3>¿Qué está protegido?</h3><p>Procesos, archivos en carpetas de usuario, conexiones de red, consultas DNS, claves de persistencia y archivos señuelo anti-ransomware.</p></article>
           <article class="card help-card"><span class="help-num">02</span><h3>Probar la detección</h3><p>Crea un archivo de texto con el contenido EICAR estándar y analízalo desde Análisis. Es una prueba inofensiva reconocida por la industria.</p><button class="btn tiny" id="copyEicar">Copiar contenido EICAR</button></article>
-          <article class="card help-card"><span class="help-num">03</span><h3>Qué hace la IA</h3><p>Clasifica metadatos en CLEAN, SUSPICIOUS o MALICIOUS. Nunca decide sola un bloqueo: siempre se combina con evidencia local verificable.</p></article>
+          <article class="card help-card"><span class="help-num">03</span><h3>Cómo se decide</h3><p>Un motor determinista combina hash, firmas, reglas, origen y comportamiento observado. Todo se calcula en este equipo, sin conexión a servidores externos.</p></article>
           <article class="card help-card"><span class="help-num">04</span><h3>Límites honestos</h3><p>Ningún antivirus ofrece protección absoluta. Esta versión cubre el flujo esencial; las firmas y reglas deben mantenerse actualizadas.</p></article>
         </div>
       </section>

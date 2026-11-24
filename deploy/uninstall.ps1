@@ -15,10 +15,34 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Este desinstalador debe ejecutarse desde un shell con privilegios de administrador.'
 }
 
+function Assert-SafeDirectory([string]$Path, [string]$Label, [string[]]$RequiredMarkers) {
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+    $forbidden = @(
+        $root,
+        $env:SystemRoot,
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramData,
+        $env:USERPROFILE
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
+    if ($forbidden -contains $full.TrimEnd('\')) {
+        throw "$Label no puede ser una raíz del sistema: $full"
+    }
+    if (Test-Path -LiteralPath $full) {
+        $found = $RequiredMarkers | Where-Object { Test-Path -LiteralPath (Join-Path $full $_) }
+        if (-not $found) { throw "$Label no contiene un marcador de Aegis Guard: $full" }
+    }
+    return $full
+}
+
 $programFiles = $env:ProgramW6432
 if ([string]::IsNullOrWhiteSpace($programFiles)) { $programFiles = $env:ProgramFiles }
 if ([string]::IsNullOrWhiteSpace($InstallDir)) { $InstallDir = Join-Path $programFiles 'AegisGuard' }
 if ([string]::IsNullOrWhiteSpace($DataDir)) { $DataDir = Join-Path $env:ProgramData 'AegisGuard' }
+$InstallDir = Assert-SafeDirectory $InstallDir 'InstallDir' @('run-service.cmd', 'Aegis.Service\Aegis.Service.exe', 'Aegis.UI\Aegis.UI.exe')
+$DataDir = Assert-SafeDirectory $DataDir 'DataDir' @('config.json', 'events.jsonl', 'threats.jsonl', 'canaries.json')
 $separator = [IO.Path]::DirectorySeparatorChar
 
 Write-Host 'Deteniendo tareas y procesos de Aegis Guard...'
@@ -54,7 +78,8 @@ foreach ($folder in @('StartMenu', 'Desktop', 'CommonDesktopDirectory')) {
             $pointsHere = -not [string]::IsNullOrWhiteSpace($target) -and
                           $target.StartsWith($InstallDir + $separator, [StringComparison]::OrdinalIgnoreCase)
             if ($ownShortcut -or $pointsHere) { Remove-Item -LiteralPath $link.FullName -Force }
-        } catch { /* acceso directo ilegible */ }
+        } catch { # acceso directo ilegible
+        }
     }
 }
 
@@ -70,11 +95,23 @@ if (Test-Path -LiteralPath $webViewData) {
 }
 
 if ($KeepData) {
-    Write-Host "Se conserva el estado en $DataDir (incluye cuarentena y claves)."
+    Write-Host "Se conserva el estado en $DataDir (incluye cuarentena, eventos y configuración)."
 }
 elseif (Test-Path -LiteralPath $DataDir) {
-    # Los canarios están en perfiles de usuario: hay que limpiarlos antes de
-    # borrar el manifiesto que guarda sus rutas.
+    if (-not $Yes -and -not [Environment]::UserInteractive) {
+        Write-Warning "Sesión no interactiva: se conserva el estado en $DataDir. Use -Yes para eliminarlo."
+    }
+    elseif (-not $Yes) {
+        $answer = Read-Host "¿Eliminar también $DataDir (eventos, cuarentena y configuración)? [s/N]"
+        if ($answer -notmatch '^[sS]') {
+            Write-Host "Se conserva el estado en $DataDir."
+            Write-Host 'Desinstalación completada.'
+            return
+        }
+    }
+
+    # Los canarios están en perfiles de usuario: solo se retirán cuando el
+    # usuario haya confirmado expresamente la eliminación de todo el estado.
     $manifest = Join-Path $DataDir 'canaries.json'
     if (Test-Path -LiteralPath $manifest) {
         try {
@@ -90,17 +127,6 @@ elseif (Test-Path -LiteralPath $DataDir) {
         } catch { Write-Warning 'No se pudo leer el manifiesto de canarios.' }
     }
 
-    if (-not $Yes -and -not [Environment]::UserInteractive) {
-        Write-Warning "Sesión no interactiva: se conserva el estado en $DataDir. Use -Yes para eliminarlo."
-    }
-    elseif (-not $Yes) {
-        $answer = Read-Host "¿Eliminar también $DataDir (eventos, cuarentena y credenciales)? [s/N]"
-        if ($answer -notmatch '^[sS]') {
-            Write-Host "Se conserva el estado en $DataDir."
-            Write-Host 'Desinstalación completada.'
-            return
-        }
-    }
     Remove-Item -LiteralPath $DataDir -Recurse -Force
     Write-Host "Eliminado: $DataDir"
 }

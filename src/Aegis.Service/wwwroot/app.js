@@ -11,8 +11,7 @@
     learned: [],
     settings: null,
     view: 'dashboard',
-    threatFilter: 'all',
-    aiTest: null
+    threatFilter: 'all'
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -122,7 +121,7 @@
       degraded: ['Motor degradado', s.etwActive === false
         ? 'ETW no está disponible: se usa sondeo de procesos y watchers. Revise los permisos del servicio.'
         : 'La monitorización en tiempo real no está activa. Revise los permisos del servicio.', 'bad'],
-      starting: ['Iniciando motor…', 'Comprobando monitorización, firewall y clasificador en la nube.', 'warn']
+      starting: ['Iniciando motor…', 'Comprobando monitorización, firewall y reglas locales.', 'warn']
     };
     const [heroTitle, heroDescription, tone] = labels[s.protectionState] || labels.starting;
     $('#heroTitle').textContent = heroTitle;
@@ -139,8 +138,7 @@
       ['Monitorización', s.monitorActive, 'good'],
       ['ETW', s.etwActive, s.etwActive ? 'good' : 'warn'],
       ['Firewall WFP', s.firewallActive, 'good'],
-      ['IA ' + (s.policy?.aiEnabled ? 'activada' : 'desactivada'), !!s.policy?.aiEnabled, s.policy?.aiEnabled ? 'good' : 'warn'],
-      ['Enlace IA', s.aiReachable, s.aiReachable ? 'good' : 'warn'],
+      ['Motor local', s.monitorActive, 'good'],
       ['Modo aprendizaje', !!s.policy?.learningMode, 'warn']
     ];
     $('#heroTags').innerHTML = tags.map(([label, ok, cls]) =>
@@ -157,7 +155,6 @@
       ['Motor en tiempo real', s.monitorActive],
       ['Telemetría ETW', s.etwActive, 'ETW no disponible; se usa sondeo de procesos'],
       ['Firewall de Windows disponible', s.firewallActive],
-      ['Clasificador en la nube', s.aiReachable, 'Sin verificar en esta sesión; use Probar IA'],
       ['Eventos observados', (s.eventsTotal || 0) > 0],
       ['Amenazas revisadas', (s.threatsTotal || 0) > 0]
     ];
@@ -264,7 +261,7 @@
     const t = state.threats.find((x) => x.id === id);
     if (!t) return;
     state.lastDetail = id;
-    const o = t.observation || {}, d = t.decision || {}, ai = d.ai || {};
+    const o = t.observation || {}, d = t.decision || {};
     const reasons = (d.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('') || '<li>Sin motivos registrados</li>';
     const flags = (o.behaviorFlags || []).map((f) => pill(f, 'warn')).join(' ');
     $('#threatDetail').hidden = false;
@@ -273,7 +270,7 @@
       <div class="score-layout">
         <div class="score-block"><span>Riesgo</span><strong>${esc(number(d.risk))}/100</strong></div>
         <div class="score-block"><span>Confianza</span><strong>${esc(pct(d.confidence))}</strong></div>
-        <div class="score-block"><span>IA</span><strong>${esc(ai.choiceLabel || '—')}</strong><small>${esc(ai.error || ai.model || '')}</small></div>
+        <div class="score-block"><span>Evidencias</span><strong>${esc(number(d.local?.evidenceCount))}</strong><small>señales locales verificadas</small></div>
       </div>
       <div class="evidence"><h4>Motivos de la decisión</h4><ul>${reasons}</ul></div>
       <dl class="meta-list">
@@ -333,7 +330,7 @@
     const box = $('#scanResult');
     if (!state.scanResult) { box.hidden = true; return; }
     box.hidden = false;
-    const d = state.scanResult.decision || {}, o = state.scanResult.observation || {}, ai = d.ai || {};
+    const d = state.scanResult.decision || {}, o = state.scanResult.observation || {};
     const [verdict] = VERDICT[d.verdict] || [String(d.verdict ?? '—')];
     const [sev, tone] = SEVERITY[d.severity] || [String(d.severity ?? '—'), 'info'];
     $('#scanVerdict').textContent = verdict;
@@ -343,10 +340,8 @@
     $('#scanRiskBar').style.width = `${Math.min(100, Number(d.risk) || 0)}%`;
     $('#scanConfidence').textContent = pct(d.confidence);
     $('#scanConfidenceBar').style.width = `${Math.round((Number(d.confidence) || 0) * 100)}%`;
-    $('#scanAi').textContent = ai.choiceLabel || '—';
-    $('#scanAiDetail').textContent = ai.isValid
-      ? `${ai.model} · p=${pct(ai.malicious)} · ${ai.latencyMs || 0} ms`
-      : (ai.error || 'sin datos');
+    $('#scanEvidence').textContent = number(d.local?.evidenceCount);
+    $('#scanEvidenceDetail').textContent = `${(o.ruleMatches || []).length} regla(s) local(es)`;
     $('#scanReasons').innerHTML = (d.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('') || '<li>Sin motivos registrados</li>';
     const entries = [
       ['SHA-256', o.sha256], ['Tamaño', typeof o.fileSize === 'number' ? `${number(o.fileSize)} bytes` : '—'],
@@ -357,36 +352,24 @@
       `<div><dt>${esc(key)}</dt><dd>${esc(value || '—')}</dd></div>`).join('');
   }
 
-  function renderAiTest() {
-    const result = state.aiTest;
-    if (!result) return;
-    const detail = result.isValid
-      ? `${result.model} · ${result.choiceLabel} · confianza ${pct(result.confidence)} · ${result.latencyMs || 0} ms`
-      : (result.error || 'respuesta no válida');
-    toast(result.isValid ? `Prueba IA correcta: ${detail}` : `Prueba IA fallida: ${detail}`, !result.isValid);
-    state.aiTest = null;
-  }
-
   function renderSettings() {
     const p = state.settings;
     if (!p) return;
-    $('#setAi').checked = !!p.aiEnabled;
     $('#setLearning').checked = !!p.learningMode;
     $('#setQuarantine').checked = !!p.autoQuarantine;
     $('#setBlock').checked = !!p.autoBlockNetwork;
     const ranges = [
       ['setMonitor', 'outMonitor', p.monitorThreshold],
       ['setBlockThreshold', 'outBlock', p.blockThreshold],
-      ['setQuarantineThreshold', 'outQuarantine', p.quarantineThreshold],
-      ['setAiWeight', 'outAiWeight', Math.round((p.aiWeight || 0) * 100)]
+      ['setQuarantineThreshold', 'outQuarantine', p.quarantineThreshold]
     ];
     ranges.forEach(([input, output, value]) => {
       $('#' + input).value = value;
-      $('#' + output).textContent = `${value}${input === 'setAiWeight' ? '%' : '/100'}`;
+      $('#' + output).textContent = `${value}/100`;
     });
     $$('input[type=range]').forEach((input) => input.addEventListener('input', () => {
-      const output = $(`#out${{ setMonitor: 'Monitor', setBlockThreshold: 'Block', setQuarantineThreshold: 'Quarantine', setAiWeight: 'AiWeight' }[input.id]}`);
-      if (output) output.textContent = `${input.value}${input.id === 'setAiWeight' ? '%' : '/100'}`;
+      const output = $(`#out${{ setMonitor: 'Monitor', setBlockThreshold: 'Block', setQuarantineThreshold: 'Quarantine' }[input.id]}`);
+      if (output) output.textContent = `${input.value}/100`;
     }));
   }
 
@@ -456,10 +439,6 @@
     });
 
     $('#notificationBtn').addEventListener('click', () => switchView('threats'));
-    $('#testAiBtn').addEventListener('click', async () => {
-      try { state.aiTest = await api('/api/ai/test', { method: 'POST' }); renderAiTest(); }
-      catch (error) { toast(error.message, true); }
-    });
 
     $('#scanBtn').addEventListener('click', async () => {
       const path = $('#scanPath').value.trim();
@@ -507,19 +486,21 @@
 
     $('#saveSettings').addEventListener('click', async () => {
       const policy = {
-        aiEnabled: $('#setAi').checked,
         learningMode: $('#setLearning').checked,
         autoQuarantine: $('#setQuarantine').checked,
         autoBlockNetwork: $('#setBlock').checked,
         monitorThreshold: Number($('#setMonitor').value),
         blockThreshold: Number($('#setBlockThreshold').value),
         quarantineThreshold: Number($('#setQuarantineThreshold').value),
-        aiWeight: Number($('#setAiWeight').value) / 100,
         maxEvents: state.settings?.maxEvents || 500
       };
       try {
-        state.settings = await api('/api/settings', { method: 'PUT', body: JSON.stringify(policy) });
-        toast('Configuración guardada y aplicada');
+        const applied = await api('/api/settings', { method: 'PUT', body: JSON.stringify(policy) });
+        const adjusted = ['monitorThreshold', 'blockThreshold', 'quarantineThreshold', 'maxEvents']
+          .some((key) => applied[key] !== policy[key]);
+        state.settings = applied;
+        renderSettings();
+        toast(adjusted ? 'Configuración guardada; algunos valores se ajustaron a límites seguros' : 'Configuración guardada y aplicada');
         await loadCore();
       } catch (error) { toast(error.message, true); }
     });

@@ -16,8 +16,7 @@ project.assets.json
 *.deps.json
 *.runtimeconfig.json
 
-## Secretos y estado local (nunca versionar)
-gateway.env
+## Estado local (nunca versionar)
 ui-token
 config.json
 *.pfx

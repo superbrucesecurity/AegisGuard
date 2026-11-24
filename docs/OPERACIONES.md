@@ -26,7 +26,7 @@ El ciclo se puede probar sin tocar las rutas de producción:
 
 ```powershell
 $iso = Join-Path $env:TEMP 'aegis-install-smoke'
-.\deploy\install.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard"
+.\deploy\install.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -AllowUnsigned
 .\deploy\finish.cmd "$iso\Program" "$iso\AegisGuard" AegisSmoke "Aegis Smoke" AegisSmokeSvc
 # Opcional: añada [INTELPACKAGEDIR] e [INTELKEYHASH] como argumentos sexto y séptimo
 # para registrar un paquete firmado; si se omiten, se usan las variables de entorno.
@@ -34,7 +34,63 @@ $iso = Join-Path $env:TEMP 'aegis-install-smoke'
 .\deploy\uninstall.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -TaskPrefix AegisSmoke -ServiceName AegisSmokeSvc -Yes
 ```
 
+En ese laboratorio `-AllowUnsigned` es explícito para no depender de un certificado; en producción se usa la cadena firmada descrita abajo. `install.cmd` solo reenvía argumentos a `Setup-Aegis.ps1`.
+
 El desinstalador detiene y elimina el servicio indicado, elimina tareas heredadas con el prefijo indicado (`AegisSmoke *`), el proveedor de eventos, accesos directos, reglas de firewall `AEGIS Guard*`, canarios y datos aislados. Antes de borrar un canario comprueba que la ruta del manifiesto es un archivo `*.aegis-canary-*.txt` dentro del escritorio, Documentos o Descargas del perfil: un manifiesto manipulado no puede convertir la desinstalación en un borrado arbitrario. `uninstall.ps1` acepta `-TaskPrefix`, `-ServiceName` y `-ShortcutName` para limpiar despliegues con otros nombres. No se definieron variables de entorno secretas: el producto no necesita credenciales.
+
+## Firma, verificación y rollback del paquete
+
+El instalador ya no publica y aplica en un solo paso: primero produce una etapa reproducible, luego se firma con un certificado de firma de código y solo después se aplica. La cadena recomendada es:
+
+```powershell
+$signer = '<SHA-256 de 64 hexadecimales del certificado>'
+
+# 1. Publicar en una etapa nueva; no se instala nada.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Setup-Aegis.ps1 -StageOnly `
+  -StageDir .\artifacts\release-stage -InstallDir "$env:ProgramFiles\AegisGuard" `
+  -DataDir "$env:ProgramData\AegisGuard"
+
+# 2. Firmar en el entorno de publicación, con la clave privada fuera del equipo destino.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Sign-Release.ps1 `
+  -TargetDir .\artifacts\release-stage -CertificateThumbprint <huella-SHA1>
+
+# 3. Verificar la etapa antes de distribuirla.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Verify-Release.ps1 `
+  -TargetDir .\artifacts\release-stage -ExpectedSignerSha256 $signer
+
+# 4. Instalar exigiendo esa misma huella y conservando la versión anterior.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Setup-Aegis.ps1 `
+  -PackageDir .\artifacts\release-stage -ExpectedSignerSha256 $signer `
+  -BackupDir D:\AegisGuard-backups\v3.0.0
+
+# 5. Registrar el servicio y crear accesos directos.
+.\deploy\finish.cmd
+```
+
+`Sign-Release.ps1` firma `.exe`, `.dll` y `.ps1` con Authenticode, calcula SHA-256 de todos los ficheros y escribe `RELEASE-SIGNATURES.json` con el esquema `aegis-release-manifest/1`. Además genera `RELEASE-SIGNATURES.ps1`: un sello firmado con Authenticode que declara el SHA-256 del JSON. Ese sello evita que se modifiquen ficheros sin firma propia (reglas, listas, documentos) reescribiendo el manifiesto. El script imprime la huella SHA-256 del certificado: fíjela como `AEGIS_RELEASE_SIGNER_SHA256` o pásela con `-ExpectedSignerSha256`. `Verify-Release.ps1` comprueba que:
+
+- el manifiesto y `VERSION` coinciden;
+- la lista de ficheros es exacta: falta o sobra cualquier fichero y se rechaza;
+- cada SHA-256 coincide y las rutas no son absolutas, contienen `..` ni son enlaces/reparse points;
+- los ejecutables tienen firma Authenticode `Valid`, encadenan correctamente y usan el certificado fijado;
+- el sello Authenticode del manifiesto está firmado por la misma clave y su hash coincide con el JSON;
+- los ficheros firmados por terceros conservan la firma declarada, sin exigirles la clave del publicador;
+- el recuento declarado de firmados propios, firmados por terceros y datos coincide con el paquete.
+
+`Setup-Aegis.ps1` ejecuta esa verificación **antes** de tocar el directorio de instalación. Si no hay manifiesto, se niega salvo que se indique explícitamente `-AllowUnsigned`; esa opción existe para laboratorio y debe evitarse en producción. La instalación guarda la versión anterior en `-BackupDir` con ACL restringida y, si falla la copia, restaura la instalación previa. El directorio de estado nunca se sustituye: cuarentena, eventos, reputación y configuración sobreviven a la actualización.
+
+Para volver atrás:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Rollback.ps1 `
+  -BackupDir D:\AegisGuard-backups\v3.0.0 -ExpectedSignerSha256 $signer -Yes
+```
+
+`Rollback.ps1` verifica el backup antes de usarlo (salvo `-SkipVerify`, reservado a despliegues antiguos), detiene el servicio si estaba en marcha, intercambia directorios de forma reversible y reinicia el servicio solo si estaba activo. Si el intercambio falla, devuelve la versión que intentaba sustituir. No modifica `AEGIS_DATA_DIR` ni los canarios. Para conservar datos al desinstalar, use `uninstall.cmd -KeepData`.
+
+Prueba aislada realizada con un certificado autofirmado temporal y el interruptor explícito `-AllowUntrustedTestSigner` (en `Sign-Release.ps1`, `Verify-Release.ps1`, `Setup-Aegis.ps1` y `Rollback.ps1`): 64 ficheros verificados, 6 firmados por la clave de prueba, 21 con firma de terceros y 37 datos; alterar `VERSION` fue rechazado; la instalación y una segunda actualización con `-BackupDir` conservaron el marcador del paquete anterior; el rollback verificó el backup, restauró el marcador y dejó `AEGIS_DATA_DIR` intacto. Ese interruptor existe solo para laboratorio: acepta firmas sin cadena de confianza y no debe usarse en producción. No se creó ni eliminó ningún servicio real ni se modificó la ACL de rutas de producción.
+
+Límites honestos: la firma Authenticode se generó sin marca de tiempo RFC3161, por lo que la validez depende de que el certificado y su cadena sigan siendo válidos en el momento de instalar. El `key pinning` depende de que la huella introducida por el administrador sea la correcta; verifíquela por un canal independiente antes de fijarla. Este mecanismo protege la distribución y el rollback, no convierte al proceso en inmune a un atacante con privilegios administrativos en el equipo. No se desactiva Microsoft Defender, Bitdefender ni ningún otro producto para firmar, instalar o probar.
 
 ## Trazabilidad de la distribución
 

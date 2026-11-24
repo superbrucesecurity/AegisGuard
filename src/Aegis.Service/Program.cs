@@ -163,6 +163,17 @@ app.MapDelete("/api/quarantine/{id}", async (string id) =>
 
 app.MapGet("/api/firewall/rules", () => Results.Json(firewall.ListRuleNames(), JsonDefaults.Options));
 
+app.MapGet("/api/firewall/stats", () =>
+{
+    var rules = firewall.ListRules();
+    return Results.Json(new FirewallRuleStats
+    {
+        Active = rules.Count,
+        Automatic = rules.Count(x => x.Automatic),
+        Manual = rules.Count(x => !x.Automatic)
+    }, JsonDefaults.Options);
+});
+
 app.MapPost("/api/firewall/rules", (FirewallRuleSpec spec) =>
 {
     spec.Name = spec.Name.StartsWith(firewall.ProductPrefix, StringComparison.OrdinalIgnoreCase)
@@ -187,6 +198,9 @@ app.MapPut("/api/settings", (PolicySettings policy) =>
     state.UpdatePolicy(config.Policy);
     return Results.Ok(state.GetPolicy());
 });
+
+app.MapPost("/api/selftest/eicar", async (CancellationToken ct) =>
+    Results.Json(await pipeline.SelfTestEicarAsync(ct).ConfigureAwait(false), JsonDefaults.Options));
 
 app.MapPost("/api/scan", async (ScanRequest request, CancellationToken ct) =>
 {

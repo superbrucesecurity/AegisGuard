@@ -47,11 +47,7 @@ public sealed class DetectionPipeline
     public async Task<ThreatRecord> ProcessAsync(Observation observation, CancellationToken ct = default)
     {
         var policy = _state.GetPolicy();
-        var ruleMatches = new List<RuleMatch>(observation.RuleMatches);
-        await EnrichAsync(observation, ruleMatches, ct).ConfigureAwait(false);
-
-        var local = _decision.Assess(observation, ruleMatches, _intel.SnapshotHashes());
-        var decision = _decision.Decide(observation, local, policy);
+        var decision = await EvaluateAsync(observation, ct).ConfigureAwait(false);
 
         await _store.AppendAsync(observation).ConfigureAwait(false);
 
@@ -66,6 +62,88 @@ public sealed class DetectionPipeline
             _logger.LogInformation("Amenaza {Severity}: {Subject} -> {Verdict} (riesgo {Risk})", decision.Severity, observation.Subject, decision.Verdict, decision.Risk);
 
         return threat;
+    }
+
+    /// <summary>
+    /// Evalúa una observación con el motor real, sin persistirla ni aplicar
+    /// remediación. La usa la prueba EICAR para verificar la detección sin
+    /// contaminar el historial ni poner en cuarentena el fichero de prueba.
+    /// </summary>
+    private async Task<DecisionResult> EvaluateAsync(Observation observation, CancellationToken ct)
+    {
+        var ruleMatches = new List<RuleMatch>(observation.RuleMatches);
+        await EnrichAsync(observation, ruleMatches, ct).ConfigureAwait(false);
+        var local = _decision.Assess(observation, ruleMatches, _intel.SnapshotHashes());
+        return _decision.Decide(observation, local, _state.GetPolicy());
+    }
+
+    /// <summary>
+    /// Escribe la muestra EICAR en el directorio de estado del producto, la
+    /// analiza con el mismo motor que cualquier fichero y la elimina. Si otro
+    /// producto de seguridad retira el archivo antes del análisis se informa
+    /// explícitamente: nunca se presenta como "no detectado" ni se desactiva
+    /// ese producto.
+    /// </summary>
+    public async Task<SelfTestResult> SelfTestEicarAsync(CancellationToken ct = default)
+    {
+        var directory = Path.Combine(AegisPaths.DataRoot, "selftest");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"eicar-{Guid.NewGuid():N}.txt");
+        try
+        {
+            await File.WriteAllBytesAsync(path, FileInspector.EicarSampleBytes, ct).ConfigureAwait(false);
+            // Verificar la muestra antes de analizarla permite distinguir un
+            // bloqueo externo de un fallo del motor.
+            var written = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
+            if (!FileInspector.ContainsEicarSample(written))
+                return new SelfTestResult
+                {
+                    FileBlockedExternally = true,
+                    Detail = "Otro producto de seguridad alteró la muestra antes del análisis. No desactive ese producto."
+                };
+
+            var observation = new Observation
+            {
+                Kind = EventKind.ManualScan,
+                Subject = path,
+                FileExtension = ".txt",
+                Source = "selftest"
+            };
+            var decision = await EvaluateAsync(observation, ct).ConfigureAwait(false);
+            var detected = decision.Local.HasVerifiedIndicator && decision.Verdict != Verdict.Allow;
+            if (!detected && decision.Local.EvidenceCount == 0)
+                return new SelfTestResult
+                {
+                    FileBlockedExternally = true,
+                    Detail = "La muestra desapareció antes de ser inspeccionada; compruebe el informe de su antivirus. No se desarmó el motor."
+                };
+            return new SelfTestResult
+            {
+                Detected = detected,
+                Verdict = decision.Verdict.ToString(),
+                Risk = decision.Risk,
+                Reasons = decision.Reasons,
+                Detail = detected
+                    ? "Muestra analizada por el motor local; no se guardó en el historial."
+                    : "El motor no reconoció la muestra; revise las reglas instaladas."
+            };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new SelfTestResult
+            {
+                FileBlockedExternally = true,
+                Detail = $"No se pudo analizar la muestra: {ex.Message}. Compruebe el informe de su producto de seguridad; no lo desactive."
+            };
+        }
+        finally
+        {
+            try { File.Delete(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "No se pudo eliminar la muestra EICAR {Path}", path);
+            }
+        }
     }
 
     public async Task<ThreatRecord> ScanPathAsync(string path, CancellationToken ct = default)

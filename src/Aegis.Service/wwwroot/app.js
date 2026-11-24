@@ -7,6 +7,7 @@
     events: [],
     threats: [],
     rules: [],
+    ruleStats: null,
     quarantine: [],
     learned: [],
     settings: null,
@@ -131,7 +132,7 @@
     $('#navThreatCount').textContent = number(s.threatsTotal);
     $('#kpiEvents').textContent = number(s.eventsTotal);
     $('#kpiThreats').textContent = number(s.threatsTotal);
-    $('#kpiBlocks').textContent = number(s.blockedNetworkTotal);
+    if (state.ruleStats) $('#kpiBlocks').textContent = number(state.ruleStats.active);
     $('#kpiResources').textContent = `${number(s.cpuPercent)}% / ${Math.round((s.workingSetBytes || 0) / 1048576)} MB`;
 
     const tags = [
@@ -289,6 +290,11 @@
       `<tr><td><strong>${esc(name)}</strong></td>
        <td><button class="btn tiny danger" data-remove-rule="${esc(name)}">Eliminar</button></td></tr>`).join('')
       : emptyRow(2, 'No hay reglas AEGIS creadas en el firewall de Windows.');
+    const stats = state.ruleStats;
+    if (stats) {
+      const small = document.querySelector('#kpiBlocks').closest('.kpi').querySelector('small');
+      small.textContent = `${number(stats.automatic)} automáticas / ${number(stats.manual)} manuales`;
+    }
     $$('[data-remove-rule]').forEach((button) => button.addEventListener('click', async () => {
       try {
         await api('/api/firewall/rules/' + encodeURIComponent(button.dataset.removeRule), { method: 'DELETE' });
@@ -399,9 +405,12 @@
     if (inFlight.firewall) return;
     inFlight.firewall = true;
     try {
-      const [rules, learned] = await Promise.all([api('/api/firewall/rules'), api('/api/firewall/learned')]);
-      state.rules = rules; state.learned = learned;
+      const [rules, learned, stats] = await Promise.all([
+        api('/api/firewall/rules'), api('/api/firewall/learned'), api('/api/firewall/stats')
+      ]);
+      state.rules = rules; state.learned = learned; state.ruleStats = stats;
       renderFirewall();
+      if (state.status) renderStatus();
     } catch (error) { toast(error.message, true); }
     finally { inFlight.firewall = false; }
   }
@@ -474,14 +483,27 @@
     $('#refreshRules').addEventListener('click', async () => { await loadFirewall(); toast('Reglas actualizadas'); });
     $('#threatFilter').addEventListener('change', (event) => { state.threatFilter = event.target.value; renderThreats(); });
 
-    $('#exportBtn').addEventListener('click', () => {
-      const blob = new Blob([JSON.stringify(state.events, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `aegis-eventos-${new Date().toISOString().slice(0, 10)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
+    $('#exportBtn').addEventListener('click', async () => {
+      try {
+        // La tabla solo carga 200 eventos para ser ágil; la exportación
+        // recorre todas las páginas hasta agotar el historial.
+        const page = 1000;
+        const events = [];
+        for (let skip = 0; skip < 100000; skip += page) {
+          const batch = await api(`/api/events?limit=${page}&skip=${skip}`);
+          events.push(...batch);
+          if (batch.length < page) break;
+        }
+        const payload = { exportedAt: new Date().toISOString(), count: events.length, events };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `aegis-eventos-${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast(`${number(events.length)} eventos exportados`);
+      } catch (error) { toast(error.message, true); }
     });
 
     $('#saveSettings').addEventListener('click', async () => {
@@ -505,16 +527,26 @@
       } catch (error) { toast(error.message, true); }
     });
 
-    $('#copyEicar').addEventListener('click', async () => {
-      // Compuesto a partir de códigos para no almacenar la firma literal en el
-      // código servido (los antivirus pueden bloquear el propio archivo .js).
-      const eicar = String.fromCharCode(
-        88,53,79,33,80,37,64,65,80,91,52,92,80,90,88,53,52,40,80,94,41,55,67,67,41,55,125,36,
-        69,73,67,65,82,45,83,84,65,78,68,65,82,68,45,65,78,84,73,86,73,82,85,83,45,84,69,83,
-        84,45,70,73,76,69,33,36,72,43,72,42
-      );
-      try { await navigator.clipboard.writeText(eicar); toast('Contenido EICAR copiado'); }
-      catch { toast('No se pudo copiar; use samples/create-eicar.ps1.', true); }
+    $('#runEicar').addEventListener('click', async () => {
+      const result = $('#eicarResult');
+      result.hidden = false;
+      result.textContent = 'Ejecutando prueba con el motor local…';
+      try {
+        const test = await api('/api/selftest/eicar', { method: 'POST' });
+        if (test.detected) {
+          result.textContent = `Detectado por AEGIS Guard: ${test.verdict}, riesgo ${Math.round(test.risk)}. ${test.detail}`;
+          toast('Prueba EICAR detectada por el motor local');
+        } else if (test.fileBlockedExternally) {
+          result.textContent = test.detail;
+          toast('La muestra fue bloqueada antes del análisis; no desactive otros antivirus', true);
+        } else {
+          result.textContent = `El motor no detectó la muestra (${test.verdict}). Revise las reglas instaladas.`;
+          toast('Prueba EICAR no detectada', true);
+        }
+      } catch (error) {
+        result.textContent = error.message;
+        toast(error.message, true);
+      }
     });
 
     window.addEventListener('resize', () => { if (state.view === 'dashboard') drawChart(); });

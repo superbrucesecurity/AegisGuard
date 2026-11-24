@@ -64,7 +64,7 @@ En modo aprendizaje las decisiones se registran, pero no se aplican cuarentena n
 
 ## 4. Remediación
 
-- **Firewall WFP:** usa COM `HNetCfg.FwPolicy2` para crear reglas con prefijo `AEGIS Guard`, auditables y eliminables. No hay driver de callout: no inspecciona tráfico en tiempo real ni bloquea conexiones anteriores a la regla.
+- **Firewall WFP:** usa COM `HNetCfg.FwPolicy2` para crear reglas con prefijo `AEGIS Guard`, auditables y eliminables. `GET /api/firewall/stats` distingue reglas automáticas (creadas por un hallazgo) de manuales; el panel muestra el total de reglas activas, no un recuento de paquetes bloqueados. No hay driver de callout: no inspecciona tráfico en tiempo real ni bloquea conexiones anteriores a la regla.
 - **Cuarentena:** AES-GCM con clave protegida por DPAPI. El fichero se puede restaurar desde la UI; el purgado definitivo es explícito.
 - **Modo aprendizaje:** registra las conexiones nuevas en `/api/firewall/learned` para revisión y omite la remediación automática, salvo indicios verificados.
 

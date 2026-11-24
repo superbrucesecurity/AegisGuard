@@ -28,7 +28,7 @@ $iso = Join-Path $env:TEMP 'aegis-install-smoke'
 .\deploy\uninstall.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -Yes
 ```
 
-El desinstalador elimina tareas con el prefijo indicado (`AegisSmoke *`), accesos directos, reglas de firewall `AEGIS Guard*`, canarios y datos aislados. `uninstall.ps1` acepta `-TaskPrefix` y `-ShortcutName` para limpiar despliegues con otros nombres. No se definieron variables de entorno secretas: el producto no necesita credenciales.
+El desinstalador elimina tareas con el prefijo indicado (`AegisSmoke *`), accesos directos, reglas de firewall `AEGIS Guard*`, canarios y datos aislados. Antes de borrar un canario comprueba que la ruta del manifiesto es un archivo `*.aegis-canary-*.txt` dentro del escritorio, Documentos o Descargas del perfil: un manifiesto manipulado no puede convertir la desinstalación en un borrado arbitrario. `uninstall.ps1` acepta `-TaskPrefix` y `-ShortcutName` para limpiar despliegues con otros nombres. No se definieron variables de entorno secretas: el producto no necesita credenciales.
 
 ## Estados de protección
 
@@ -72,7 +72,7 @@ Medición de 20 s con 24 núcleos lógicos, monitorización y WFP activos, sin e
 
 ## Respuesta a incidentes
 
-1. Exporte el historial desde la UI (**Historial → Exportar JSON**) o consuma `/api/events` y `/api/threats` (ambos admiten `limit`, `skip` y `severity`; `/api/events` también admite `verdict`).
+1. Exporte el historial desde la UI (**Historial → Exportar JSON**): recorre todas las páginas de `/api/events?limit=1000&skip=N` y genera un JSON con `exportedAt`, `count` y `events`; la tabla solo muestra 200 eventos por rendimiento. También puede consumir `/api/events` y `/api/threats` (ambos admiten `limit`, `skip` y `severity`; `/api/events` también admite `verdict`).
 2. Identifique el `observationId` y revise `decision.reasons`.
 3. Restaure desde cuarentena solo tras verificar el fichero fuera del equipo.
 4. Si un veredicto fue erróneo, ajuste umbrales o añada una excepción; no desactive el motor globalmente.

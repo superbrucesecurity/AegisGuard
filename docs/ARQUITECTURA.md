@@ -27,6 +27,8 @@ No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El
 4. **Remediación**: cuarentena reversible solo para rutas seguras; bloqueo WFP solo con veredicto `Block`/`Quarantine`; modo aprendizaje registra conexiones sin bloquear.
 5. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl` bajo `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`). Las reglas se leen de `%AEGIS_RULES_DIR%` (por defecto el directorio `rules` del servicio).
 
+El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el resultado. La prueba EICAR (`POST /api/selftest/eicar`) reutiliza el enriquecimiento y la decisión, pero no escribe eventos ni aplica remediación: crea una muestra en `%AEGIS_DATA_DIR%\selftest`, la analiza y la elimina. Si otro producto retira el archivo, se informa del bloqueo externo en lugar de fingir un resultado.
+
 ## Reglas de decisión
 
 - `risk = local.Score`, limitado a 0–100. No hay señales procedentes de redes neuronales ni de servicios remotos.
@@ -39,7 +41,7 @@ No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El
 
 ## Firewall
 
-`FirewallManager` usa `HNetCfg.FwPolicy2` para crear reglas de bloqueo por aplicación, dirección remota y puerto. Es firewall de usuario, no un callout de kernel: no inspecciona el tráfico en tiempo real ni puede impedir tráfico previo a la creación de la regla. Las reglas creadas llevan prefijo `AEGIS Guard` para poder auditarse y eliminarse. No se realiza inspección TLS.
+`FirewallManager` usa `HNetCfg.FwPolicy2` para crear reglas de bloqueo por aplicación, dirección remota y puerto. Es firewall de usuario, no un callout de kernel: no inspecciona el tráfico en tiempo real ni puede impedir tráfico previo a la creación de la regla. Las reglas creadas llevan prefijo `AEGIS Guard` para poder auditarse y eliminarse; sus descripciones permiten clasificarlas como automáticas o manuales para `/api/firewall/stats`. El KPI del panel cuenta reglas activas, no paquetes bloqueados. No se realiza inspección TLS.
 
 ## Límites conocidos
 

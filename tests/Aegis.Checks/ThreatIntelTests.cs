@@ -34,6 +34,20 @@ public sealed class ThreatIntelTests : IDisposable
     }
 
     [Fact]
+    public void BundledListsContainNoInventedIndicators()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "rules", "threat-intel.json");
+        var intel = new ThreatIntel();
+        intel.Load(path);
+
+        Assert.True(intel.HashCount >= 1);
+        Assert.Equal(0, intel.DomainCount);
+        Assert.Equal(0, intel.IpCount);
+        Assert.False(intel.IsMaliciousDomain("evil.example"));
+        Assert.False(intel.IsMaliciousIp("203.0.113.9"));
+    }
+
+    [Fact]
     public void FirewallRuleNameUsesProductPrefixAndIsBounded()
     {
         var manager = new FirewallManager();

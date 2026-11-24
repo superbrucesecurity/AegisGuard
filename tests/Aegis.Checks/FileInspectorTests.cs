@@ -23,4 +23,18 @@ public sealed class FileInspectorTests
         }
         finally { File.Delete(file); }
     }
+
+    [Fact]
+    public void EicarSampleBytesAreRecognizedInMemory()
+    {
+        // No se escribe la muestra en disco: otros antivirus pueden bloquearla
+        // y el test debe verificar al motor, no permisos de terceros.
+        Assert.Equal(68, FileInspector.EicarSampleBytes.Length);
+        Assert.Equal("275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(FileInspector.EicarSampleBytes)).ToLowerInvariant());
+        Assert.True(FileInspector.ContainsEicarSample(FileInspector.EicarSampleBytes));
+        Assert.False(FileInspector.ContainsEicarSample(System.Text.Encoding.ASCII.GetBytes("texto inocuo")));
+        Assert.True(FileInspector.ContainsEicarSample(
+            System.Text.Encoding.ASCII.GetBytes("INICIO" + System.Text.Encoding.ASCII.GetString(FileInspector.EicarSampleBytes) + "FIN")));
+    }
 }

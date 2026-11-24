@@ -37,6 +37,23 @@ function Assert-SafeDirectory([string]$Path, [string]$Label, [string[]]$Required
     return $full
 }
 
+function Test-CanaryPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    try { $full = [IO.Path]::GetFullPath($Path) } catch { return $false }
+    $name = [IO.Path]::GetFileName($full)
+    if ($name -notmatch '^\.aegis-canary-[a-z0-9_-]+\.txt$') { return $false }
+    $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    $roots = @(
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory),
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments),
+        (Join-Path $profile 'Downloads')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
+    $separator = [IO.Path]::DirectorySeparatorChar
+    $owned = @($roots | Where-Object { $full.StartsWith($_ + $separator, [StringComparison]::OrdinalIgnoreCase) })
+    return ($owned.Count -gt 0)
+}
+
 $programFiles = $env:ProgramW6432
 if ([string]::IsNullOrWhiteSpace($programFiles)) { $programFiles = $env:ProgramFiles }
 if ([string]::IsNullOrWhiteSpace($InstallDir)) { $InstallDir = Join-Path $programFiles 'AegisGuard' }
@@ -118,7 +135,14 @@ elseif (Test-Path -LiteralPath $DataDir) {
             $canaries = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
             foreach ($property in $canaries.Hashes.PSObject.Properties) {
                 $path = $property.Name
-                if (-not (Test-Path -LiteralPath $path)) { continue }
+                # El manifiesto es un archivo local editable: no se permite que
+                # una ruta manipulada convierta la desinstalación en un borrado
+                # arbitrario. Solo se retiran señuelos conocidos del perfil.
+                if (-not (Test-CanaryPath $path)) {
+                    Write-Warning "Ruta de canario no reconocida, se omite: $path"
+                    continue
+                }
+                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
                 try {
                     Set-ItemProperty -LiteralPath $path -Name Attributes -Value ([IO.FileAttributes]::Normal)
                     Remove-Item -LiteralPath $path -Force

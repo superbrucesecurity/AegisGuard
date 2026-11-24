@@ -30,6 +30,17 @@ public sealed class FirewallManagerTests
     }
 
     [Fact]
+    public void AutomaticDescriptionsAreClassifiedWithoutKnowingTheThreatId()
+    {
+        var id = Guid.NewGuid();
+
+        Assert.True(FirewallManager.IsAutomaticThreatDescription($"AEGIS Guard - {id:N} - riesgo 87"));
+        Assert.True(FirewallManager.IsAutomaticThreatDescription($"AEGIS Guard - {id:D} - riesgo 87"));
+        Assert.False(FirewallManager.IsAutomaticThreatDescription("Regla creada desde AEGIS Guard"));
+        Assert.False(FirewallManager.IsAutomaticThreatDescription($"Otro producto - {id:N} - riesgo 87"));
+    }
+
+    [Fact]
     public void UnrelatedDescriptionsAreNotRecognized()
     {
         var id = Guid.NewGuid();

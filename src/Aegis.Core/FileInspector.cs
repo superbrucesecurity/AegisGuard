@@ -10,7 +10,12 @@ public sealed class FileInspector
 {
     // Compuesta en tiempo de compilación a partir de bytes: un archivo con la
     // cadena literal puede ser bloqueado por el propio antivirus del equipo.
-    private static readonly byte[] EicarSignature =
+    /// <summary>
+    /// Muestra EICAR estándar compuesta en tiempo de compilación a partir de
+    /// bytes. Se expone para la prueba automática del motor sin escribir la
+    /// cadena literal en el código servido.
+    /// </summary>
+    public static readonly byte[] EicarSampleBytes =
     [
         0x58, 0x35, 0x4F, 0x21, 0x50, 0x25, 0x40, 0x41, 0x50, 0x5B, 0x34, 0x5C, 0x50, 0x5A,
         0x58, 0x35, 0x34, 0x28, 0x50, 0x5E, 0x29, 0x37, 0x43, 0x43, 0x29, 0x37, 0x7D, 0x24,
@@ -19,6 +24,13 @@ public sealed class FileInspector
         0x54, 0x2D, 0x46, 0x49, 0x4C, 0x45, 0x21, 0x24, 0x48, 0x2B, 0x48, 0x2A
     ];
 
+    /// <summary>
+    /// Comprueba la firma EICAR sobre bytes ya leídos. Separarla de la E/S
+    /// permite verificar la detección sin escribir una muestra en disco, que
+    /// otros productos de seguridad pueden bloquear legítimamente.
+    /// </summary>
+    public static bool ContainsEicarSample(ReadOnlySpan<byte> data) => data.IndexOf(EicarSampleBytes) >= 0;
+
     public async Task<(string sha256, long length, bool eicar)> HashAsync(string path, CancellationToken ct = default)
     {
         using var sha = SHA256.Create();
@@ -26,7 +38,7 @@ public sealed class FileInspector
         var buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
         long total = 0;
         var eicar = false;
-        var head = new byte[EicarSignature.Length];
+        var head = new byte[EicarSampleBytes.Length];
         var headLength = 0;
         try
         {
@@ -43,7 +55,7 @@ public sealed class FileInspector
                 }
             }
             sha.TransformFinalBlock([], 0, 0);
-            eicar = head.AsSpan(0, headLength).IndexOf(EicarSignature) >= 0;
+            eicar = ContainsEicarSample(head.AsSpan(0, headLength));
             return (Convert.ToHexString(sha.Hash!).ToLowerInvariant(), total, eicar);
         }
         finally

@@ -175,6 +175,29 @@ public sealed class RuntimeStatus
     public PolicySettings Policy { get; set; } = new();
 }
 
+public sealed class FirewallRuleSummary
+{
+    public string Name { get; set; } = string.Empty;
+    public bool Automatic { get; set; }
+}
+
+public sealed class FirewallRuleStats
+{
+    public int Active { get; set; }
+    public int Automatic { get; set; }
+    public int Manual { get; set; }
+}
+
+public sealed class SelfTestResult
+{
+    public bool Detected { get; set; }
+    public bool FileBlockedExternally { get; set; }
+    public string Verdict { get; set; } = "Unknown";
+    public double Risk { get; set; }
+    public List<string> Reasons { get; set; } = [];
+    public string Detail { get; set; } = string.Empty;
+}
+
 public static class JsonDefaults
 {
     public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)

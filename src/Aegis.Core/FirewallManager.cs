@@ -148,11 +148,24 @@ public sealed class FirewallManager
     /// hallazgo. Se aceptan ambos formatos del GUID para no dejar reglas
     /// huérfanas al restaurar o purgar una amenaza.
     /// </summary>
-    public static bool IsThreatRuleDescription(string? description, string? threatId)
+    public static bool IsThreatRuleDescription(string? description, string? threatId) =>
+        TryParseThreatId(threatId, out var guid) &&
+        (description?.StartsWith($"{Prefix} - {guid:N} -", StringComparison.OrdinalIgnoreCase) == true ||
+         description?.StartsWith($"{Prefix} - {guid:D} -", StringComparison.OrdinalIgnoreCase) == true);
+
+    /// <summary>
+    /// Clasifica una descripción como regla automática sin conocer el GUID del
+    /// hallazgo, para poder contar automáticas y manuales en el panel.
+    /// </summary>
+    public static bool IsAutomaticThreatDescription(string? description)
     {
-        if (string.IsNullOrWhiteSpace(description) || !TryParseThreatId(threatId, out var guid)) return false;
-        return description.StartsWith($"{Prefix} - {guid:N} -", StringComparison.OrdinalIgnoreCase) ||
-               description.StartsWith($"{Prefix} - {guid:D} -", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(description)) return false;
+        var marker = $"{Prefix} - ";
+        if (!description.StartsWith(marker, StringComparison.OrdinalIgnoreCase)) return false;
+        var rest = description[marker.Length..];
+        var end = rest.IndexOf(" - ", StringComparison.Ordinal);
+        if (end <= 0) return false;
+        return TryParseThreatId(rest[..end], out _);
     }
 
     /// <summary>
@@ -190,7 +203,7 @@ public sealed class FirewallManager
         }
     }
 
-    public List<string> ListRuleNames()
+    public List<FirewallRuleSummary> ListRules()
     {
         object? policy = null;
         lock (_gate)
@@ -198,17 +211,29 @@ public sealed class FirewallManager
             try
             {
                 policy = CreatePolicy();
-                var result = new List<string>();
+                var result = new List<FirewallRuleSummary>();
                 foreach (dynamic rule in ((dynamic)policy!).Rules)
                 {
-                    var name = (string)rule.Name;
-                    if (IsOwnRule(name)) result.Add(name);
+                    try
+                    {
+                        var name = (string)rule.Name;
+                        if (!IsOwnRule(name)) continue;
+                        var description = (string?)rule.Description ?? string.Empty;
+                        result.Add(new FirewallRuleSummary
+                        {
+                            Name = name,
+                            Automatic = IsAutomaticThreatDescription(description)
+                        });
+                    }
+                    finally { Release(rule); }
                 }
                 return result;
             }
             finally { Release(policy); }
         }
     }
+
+    public List<string> ListRuleNames() => ListRules().Select(x => x.Name).ToList();
 
     private bool IsOwnRule(string name)
     {

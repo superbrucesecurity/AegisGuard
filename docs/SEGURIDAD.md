@@ -33,10 +33,10 @@ Los ficheros señuelo se crean con atributos oculto, sistema y solo lectura, y c
 
 ## Actualizaciones
 
-El instalador publica desde el código fuente con `dotnet publish` y reemplaza los binarios en una operación controlada. No hay canal de actualización automática de firmas ni de componentes en esta versión. Cualquier mecanismo de autoactualización futuro debe verificar firma digital y hash antes de ejecutarse; las actualizaciones de firmas serán opcionales y no serán necesarias para que la protección local siga funcionando.
+El instalador publica desde el código fuente con `dotnet publish` en un directorio temporal, verifica los ejecutables, comprueba que no haya procesos propios en ejecución y sustituye la instalación anterior mediante una copia de seguridad que se restaura si falla la copia. No hay canal de actualización automática de firmas ni de componentes en esta versión. Cualquier mecanismo de autoactualización futuro debe verificar firma digital y hash antes de ejecutarse; las actualizaciones de firmas serán opcionales y no serán necesarias para que la protección local siga funcionando.
 
 ## No hacer
 
-- No desactive Microsoft Defender, Bitdefender ni otro producto de seguridad para ejecutar las pruebas EICAR.
+- No desactive Microsoft Defender, Bitdefender ni otro producto de seguridad para ejecutar las pruebas EICAR. Si **Ayuda → Ejecutar prueba EICAR** informa de que la muestra fue bloqueada antes del análisis, ese es el resultado: Aegis no la sustituye ni la presenta como detectada por su motor.
 - No exponga el puerto 8787 mediante reglas de firewall de entrada.
 - No interprete un veredicto `Allow` como garantía de inocuidad: es una decisión con umbrales locales, no una certificación.

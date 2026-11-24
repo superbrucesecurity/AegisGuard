@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$InstallDir = "$env:ProgramFiles\AegisGuard",
     [string]$DataDir = "$env:ProgramData\AegisGuard",
@@ -108,10 +108,11 @@ try {
     Write-Host "  Estado:   $DataDir"
     Write-Host "  Reglas:   $rulesDest"
     Write-Host ''
-    Write-Host 'Para reforzar permisos, registrar el arranque automático y crear accesos directos, ejecute como administrador:'
+    Write-Host 'Para reforzar permisos, registrar el servicio SCM con inicio automático y crear accesos directos, ejecute como administrador:'
     Write-Host "  $(Join-Path $PSScriptRoot 'finish.cmd') `"$InstallDir`" `"$DataDir`""
     Write-Host ''
-    Write-Host 'Para iniciar ahora:'
+    Write-Host 'finish.cmd crea e inicia el servicio AegisGuardSvc; no depende de que haya sesión.'
+    Write-Host 'run-service.cmd queda solo para diagnóstico manual en una sesión interactiva:'
     Write-Host "  Start-Process '$(Join-Path $InstallDir 'run-service.cmd')'"
     Write-Host "  Start-Process '$(Join-Path $InstallDir 'run-ui.cmd')'"
 }

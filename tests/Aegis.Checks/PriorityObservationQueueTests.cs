@@ -44,6 +44,27 @@ public sealed class PriorityObservationQueueTests
     }
 
     [Fact]
+    public void CoalescedDuplicatesAreNotReportedAsDropped()
+    {
+        var queue = new PriorityObservationQueue();
+        var observation = new Observation { Kind = EventKind.FileModified, Subject = "duplicado" };
+
+        Assert.True(queue.TryEnqueue(observation, out var firstCoalesced));
+        Assert.False(firstCoalesced);
+        Assert.False(queue.TryEnqueue(observation, out var duplicateCoalesced));
+        Assert.True(duplicateCoalesced);
+        Assert.Equal(1, queue.Coalesced);
+        Assert.Equal(0, queue.Dropped);
+
+        var full = new PriorityObservationQueue(normalCapacity: 1, coalesceMilliseconds: 0);
+        Assert.True(full.TryEnqueue(new Observation { Subject = "uno" }, out var first));
+        Assert.False(first);
+        Assert.False(full.TryEnqueue(new Observation { Subject = "dos" }, out var droppedCoalesced));
+        Assert.False(droppedCoalesced);
+        Assert.Equal(1, full.DroppedNormal);
+    }
+
+    [Fact]
     public async Task CriticalQueueDropsOldestAndKeepsNewest()
     {
         using var cts = new CancellationTokenSource();

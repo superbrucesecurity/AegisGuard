@@ -12,7 +12,9 @@ Invoke-RestMethod http://127.0.0.1:8787/api/health -Headers $h
 Invoke-RestMethod http://127.0.0.1:8787/api/status -Headers $h
 ```
 
-`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados.
+`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección.
+
+El servicio se registra con `sc.exe create ... start= auto`, `binPath` directo al ejecutable y acciones de recuperación `restart/5000`, `restart/10000`, `restart/30000`. No usa `schtasks /SC ONLOGON`: el inicio no depende de que haya sesión. El evento de arranque y el apagado ordenado se escriben en el registro de eventos de Windows con el proveedor del nombre del servicio. `run-service.cmd` solo se conserva para diagnóstico manual.
 
 El token local persiste entre arranques y se guarda con permisos restringidos a SYSTEM, administradores y usuario del servicio. Si el archivo ya existía con una ACL débil, los permisos se reparan al cargarlo. Si está corrupto se conserva como `ui-token.invalid-*` y se genera uno nuevo; la UI se recarga una sola vez para volver a leerlo. Para invalidarlo deliberadamente, detenga el servicio y elimine `ui-token`.
 
@@ -25,12 +27,12 @@ El ciclo se puede probar sin tocar las rutas de producción:
 ```powershell
 $iso = Join-Path $env:TEMP 'aegis-install-smoke'
 .\deploy\install.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard"
-.\deploy\finish.cmd "$iso\Program" "$iso\AegisGuard" AegisSmoke "Aegis Smoke"
-# Arrancar run-service.cmd / run-ui.cmd y comprobar /healthz y /api/status.
-.\deploy\uninstall.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -Yes
+.\deploy\finish.cmd "$iso\Program" "$iso\AegisGuard" AegisSmoke "Aegis Smoke" AegisSmokeSvc
+# finish.cmd crea e inicia el servicio: comprobar Get-Service, /api/status y eventos.
+.\deploy\uninstall.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -TaskPrefix AegisSmoke -ServiceName AegisSmokeSvc -Yes
 ```
 
-El desinstalador elimina tareas con el prefijo indicado (`AegisSmoke *`), accesos directos, reglas de firewall `AEGIS Guard*`, canarios y datos aislados. Antes de borrar un canario comprueba que la ruta del manifiesto es un archivo `*.aegis-canary-*.txt` dentro del escritorio, Documentos o Descargas del perfil: un manifiesto manipulado no puede convertir la desinstalación en un borrado arbitrario. `uninstall.ps1` acepta `-TaskPrefix` y `-ShortcutName` para limpiar despliegues con otros nombres. No se definieron variables de entorno secretas: el producto no necesita credenciales.
+El desinstalador detiene y elimina el servicio indicado, elimina tareas heredadas con el prefijo indicado (`AegisSmoke *`), el proveedor de eventos, accesos directos, reglas de firewall `AEGIS Guard*`, canarios y datos aislados. Antes de borrar un canario comprueba que la ruta del manifiesto es un archivo `*.aegis-canary-*.txt` dentro del escritorio, Documentos o Descargas del perfil: un manifiesto manipulado no puede convertir la desinstalación en un borrado arbitrario. `uninstall.ps1` acepta `-TaskPrefix`, `-ServiceName` y `-ShortcutName` para limpiar despliegues con otros nombres. No se definieron variables de entorno secretas: el producto no necesita credenciales.
 
 ## Estados de protección
 

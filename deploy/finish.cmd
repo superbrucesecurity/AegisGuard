@@ -1,6 +1,6 @@
-﻿@echo off
+@echo off
 setlocal
-rem Uso: finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME]
+rem Uso: finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME]
 rem Sin argumentos usa las rutas y nombres de produccion.
 set "INSTALLDIR=%~1"
 if "%INSTALLDIR%"=="" set "INSTALLDIR=%ProgramW6432%\AegisGuard"
@@ -11,6 +11,8 @@ set "TASKPREFIX=%~3"
 if "%TASKPREFIX%"=="" set "TASKPREFIX=AegisGuard"
 set "SHORTCUTNAME=%~4"
 if "%SHORTCUTNAME%"=="" set "SHORTCUTNAME=Aegis Guard"
+set "SERVICENAME=%~5"
+if "%SERVICENAME%"=="" set "SERVICENAME=AegisGuardSvc"
 
 for /f %%u in ('powershell.exe -NoProfile -Command "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"') do set "USERSID=*%%u"
 
@@ -18,8 +20,8 @@ echo Restringiendo permisos de %DATADIR%...
 icacls "%DATADIR%" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "%USERSID%:(OI)(CI)F" /T >nul
 if errorlevel 1 goto :fail
 
-echo Registrando arranque automatico...
-schtasks /Create /TN "%TASKPREFIX% Service" /TR "\"%INSTALLDIR%\run-service.cmd\"" /SC ONLOGON /RL HIGHEST /F >nul
+echo Registrando el servicio SCM con inicio automatico...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Register-Service.ps1" -InstallDir "%INSTALLDIR%" -DataDir "%DATADIR%" -ServiceName "%SERVICENAME%" -TaskPrefix "%TASKPREFIX%"
 if errorlevel 1 goto :fail
 
 echo Creando accesos directos...

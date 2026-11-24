@@ -68,10 +68,17 @@ public sealed class PriorityObservationQueue
         observation.Source.StartsWith("canary", StringComparison.OrdinalIgnoreCase) ||
         observation.Kind is EventKind.ManualScan or EventKind.PersistenceChanged;
 
-    /// <summary>Encola sin bloquear. Devuelve false si el evento se descartó.</summary>
-    public bool TryEnqueue(Observation observation)
+    /// <summary>Encola sin bloquear. Devuelve false si no se encoló (duplicado o descarte).</summary>
+    public bool TryEnqueue(Observation observation) => TryEnqueue(observation, out _);
+
+    /// <summary>
+    /// Encola sin bloquear y distingue entre duplicado coalescionado y pérdida
+    /// real. Solo el descarte debe elevar el estado a degradado.
+    /// </summary>
+    public bool TryEnqueue(Observation observation, out bool coalesced)
     {
         ArgumentNullException.ThrowIfNull(observation);
+        coalesced = false;
         var now = DateTime.UtcNow.Ticks;
         var key = string.Concat(observation.Kind, "|", observation.Subject, "|",
             observation.ProcessId ?? string.Empty, "|", observation.RemoteAddress ?? string.Empty);
@@ -80,6 +87,7 @@ public sealed class PriorityObservationQueue
         if (_lastSeen.TryGetValue(key, out var previous) && now - previous < _coalesceWindow.Ticks)
         {
             Interlocked.Increment(ref _coalesced);
+            coalesced = true;
             return false;
         }
         _lastSeen[key] = now;
@@ -108,7 +116,11 @@ public sealed class PriorityObservationQueue
         return true;
     }
 
-    public void Complete() => _critical.Writer.TryComplete();
+    public void Complete()
+    {
+        _critical.Writer.TryComplete();
+        _normal.Writer.TryComplete();
+    }
 
     public async IAsyncEnumerable<Observation> ReadAllAsync([EnumeratorCancellation] CancellationToken ct)
     {

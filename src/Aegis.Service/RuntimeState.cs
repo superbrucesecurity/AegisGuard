@@ -9,6 +9,8 @@ public sealed class RuntimeState
     public PolicySettings Policy { get; private set; } = new();
     public bool MonitorActive { get; set; }
     public bool EtwActive { get; set; }
+    public string ServiceName { get; set; } = "AegisGuardSvc";
+    public bool ManagedByScm { get; set; }
 
     public long EventsTotal;
     public long ThreatsTotal;
@@ -85,6 +87,8 @@ public sealed class RuntimeState
         return new RuntimeStatus
         {
             ServiceRunning = true,
+            ServiceName = ServiceName,
+            ManagedByScm = ManagedByScm,
             MonitorActive = MonitorActive,
             EtwActive = EtwActive,
             FirewallActive = firewallActive,

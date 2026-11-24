@@ -1,8 +1,9 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$InstallDir,
     [string]$DataDir,
     [string]$TaskPrefix = 'AegisGuard',
+    [string]$ServiceName = 'AegisGuardSvc',
     [string]$ShortcutName = 'Aegis Guard',
     [switch]$KeepData,
     [switch]$Yes
@@ -62,7 +63,25 @@ $InstallDir = Assert-SafeDirectory $InstallDir 'InstallDir' @('run-service.cmd',
 $DataDir = Assert-SafeDirectory $DataDir 'DataDir' @('config.json', 'events.jsonl', 'threats.jsonl', 'canaries.json')
 $separator = [IO.Path]::DirectorySeparatorChar
 
-Write-Host 'Deteniendo tareas y procesos de Aegis Guard...'
+Write-Host 'Deteniendo el servicio SCM de Aegis Guard...'
+$service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($service) {
+    if ($service.Status -ne 'Stopped') {
+        & sc.exe stop $ServiceName 2>$null | Out-Null
+        for ($i = 0; $i -lt 20; $i++) {
+            $current = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            if (-not $current -or $current.Status -eq 'Stopped') { break }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    & sc.exe delete $ServiceName 2>$null | Out-Null
+    for ($i = 0; $i -lt 20; $i++) {
+        if (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+Write-Host 'Deteniendo tareas heredadas y procesos de Aegis Guard...'
 $tasks = & schtasks /Query /FO CSV /NH 2>$null
 foreach ($line in $tasks) {
     $name = ($line -split '","')[0].Trim('"')

@@ -19,6 +19,8 @@ Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
 
 No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto expuesto es el enlace local de loopback `127.0.0.1:8787`.
 
+En las instalaciones gestionadas, `Aegis.Service.exe` se ejecuta como servicio SCM `AegisGuardSvc` (`start= auto`, recuperación escalonada, proveedor de eventos con el mismo nombre). `UseWindowsService` conecta el ciclo de vida con stop/shutdown; `AegisProfilePaths` traduce el SID del usuario interactivo registrado por el instalador a sus carpetas Desktop/Documentos/Downloads, necesarias porque el perfil de `LocalSystem` no las contiene. Sin ese mapeo los watchers quedan degradados.
+
 ## Flujo de una observación
 
 1. **Captura**: ETW de procesos/red/registro/DNS, watchers de archivos y canarios anti-ransomware. `PriorityObservationQueue` deduplica por kind+ruta+PID+destino, aplica coalescencia, prioriza alertas críticas y contabiliza descartes; un watcher en error se marca degradado y se recrea.

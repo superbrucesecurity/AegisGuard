@@ -28,6 +28,23 @@ public static class LocalFileAcl
             if (user is not null)
                 security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, AccessControlType.Allow));
 
+            // Cuando el servicio se ejecuta como LocalSystem, la UI abre el
+            // proceso con el usuario interactive. El instalador registra ese SID
+            // y Solo se le concede lectura sobre el token y archivos de estado.
+            var uiSid = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
+            if (!string.IsNullOrWhiteSpace(uiSid))
+            {
+                try
+                {
+                    security.AddAccessRule(new FileSystemAccessRule(
+                        new SecurityIdentifier(uiSid), FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+                }
+                catch (ArgumentException)
+                {
+                    // SID invalido: no ampliar permisos; la UI informara del error.
+                }
+            }
+
             new FileInfo(path).SetAccessControl(security);
             return true;
         }

@@ -1,6 +1,16 @@
 using System.Text.Json;
 using Aegis.Core;
 using Aegis.Service;
+using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Logging;
+
+var serviceName = Environment.GetEnvironmentVariable("AEGIS_SERVICE_NAME");
+if (string.IsNullOrWhiteSpace(serviceName)) serviceName = "AegisGuardSvc";
+// El proveedor del registro de eventos se crea con sc.exe create, que usa el
+// nombre del servicio. Usar otro nombre aquí deja los mensajes sin publicar.
+var eventSource = serviceName;
+var managedByScm = OperatingSystem.IsWindows() &&
+    string.Equals(Environment.GetEnvironmentVariable("AEGIS_SERVICE_MANAGED"), "1", StringComparison.Ordinal);
 
 var appRoot = AegisPaths.DataRoot;
 Directory.CreateDirectory(appRoot);
@@ -12,6 +22,12 @@ tokens.LoadOrCreate();
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
+if (OperatingSystem.IsWindows())
+{
+    if (managedByScm)
+        builder.Logging.AddEventLog(settings => settings.SourceName = eventSource);
+    builder.Host.UseWindowsService(options => options.ServiceName = serviceName);
+}
 builder.WebHost.UseUrls("http://127.0.0.1:8787");
 
 builder.Services.AddSingleton(new RuntimeState());
@@ -41,7 +57,18 @@ await store.InitializeAsync();
 await app.Services.GetRequiredService<QuarantineManager>().InitializeAsync();
 app.Services.GetRequiredService<RansomwareCanary>().Initialize();
 var state = app.Services.GetRequiredService<RuntimeState>();
+state.ServiceName = serviceName;
+state.ManagedByScm = managedByScm;
 state.UpdatePolicy(config.Policy);
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
+    "Aegis Guard iniciado en modo {Mode} (servicio {ServiceName}).",
+    managedByScm ? "SCM" : "consola", serviceName));
+lifetime.ApplicationStopping.Register(() =>
+{
+    state.MonitorActive = false;
+    app.Logger.LogInformation("Apagado ordenado de Aegis Guard solicitado.");
+});
 // Los KPI deben reflejar el historial cargado, no solo la sesión actual.
 state.EventsTotal = store.Observations.Count;
 state.ThreatsTotal = store.Threats.Count(x => x.Decision.Verdict != Verdict.Allow);

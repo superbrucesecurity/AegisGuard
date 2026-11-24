@@ -21,18 +21,29 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 90 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 92 casos | `tests/Aegis.Checks`. |
 
 ### `dev/v3.0` · Fase 1 — correcciones críticas verificadas
 
 - **WinTrust:** ciclo completo `WTD_STATEACTION_VERIFY=1` / `WTD_STATEACTION_CLOSE=2`, liberación nativa y mapeo verificable de estados. La cadena no comprobable sin caché de revocación se clasifica como `ChainNotVerifiable` y nunca como malware.
 - **Canarios:** clave HMAC aleatoria persistente protegida con DPAPI, manifiesto versionado y firmado, anti-rollback, conservación de evidencia inválida y rotación de clave sin perder baselines.
-- **Colas:** prioridad para alertas críticas, coalescencia corregida (el primer evento ya no se descarta), contadores reales de descarte y alerta de pérdida de visibilidad. Los descartes degradan el estado mostrado.
+- **Colas:** prioridad para alertas críticas, coalescencia corregida (el primer evento ya no se descarta), contadores reales de descarte y alerta de pérdida de visibilidad. Los duplicados coalescionados se contabilizan en `coalescedEvents`, no como pérdida; solo los descartes reales degradan el estado mostrado.
 - **Token local:** formato validado, recuperación atómica si está corrupto, conservación del archivo inválido y comparación en tiempo constante. La UI recarga una sola vez si el token cambia.
 - **Pipeline:** `ProcessStarted` se enriquece con hash/firma/reglas de la imagen y comprueba PID + tiempo de creación; la regla WFP por aplicación se crea antes de mover el archivo a cuarentena.
 - **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.0.0`).
 
 Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo user-mode y no sustituye un driver firmado.
+
+### `dev/v3.0` · Fase 2 — servicio SCM real
+
+- `finish.cmd` ya no crea la tarea `ONLOGON`: registra `AegisGuardSvc` con `sc.exe`, inicio `auto`, reinicios escalonados `5/10/30 s` y `binPath` directo al ejecutable publicado. Las variables de entorno se escriben en el registro del servicio, de modo que el proceso recibe los controles de stop/shutdown del SCM.
+- La SPA y los watchers usan el perfil del usuario interactivo registrado por el instalador (`AEGIS_UI_USER_SID`) incluso cuando el proceso se ejecuta como `LocalSystem`; sin esto, Desktop/Documentos/Downloads apuntaban a `systemprofile` y la protección quedaba degradada.
+- Logs en el registro de eventos de Windows con el proveedor del nombre del servicio, verificado con entradas reales. La API `/api/status` informa de `serviceName` y `managedByScm`.
+- La desinstalación detiene y elimina el servicio, limpia la tarea heredada y elimina el proveedor del registro de eventos. `run-service.cmd` queda únicamente para diagnóstico manual.
+
+Ciclo verificado en ruta aislada: `install.cmd` → `finish.cmd` → servicio `Running`/`Auto` → API `3.0.0` con token → `uninstall.cmd`. El estado final fue `learning` con `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `droppedEvents=0`, `coalescedEvents=5` y 9 entradas reales en el registro de eventos.
+
+La SPA se verificó en navegador contra el servicio instalado, inyectando el token igual que WebView2: muestra `v3.0.0 · motor local`, `Modo aprendizaje`, KPI `Bloqueos / cuarentenas = 0 / 0`, etiquetas `Servicio SCM: sí`, `Sin pérdida de eventos: sí` y el nombre del servicio en el estado del motor. Durante esa comprobación apareció y se corrigió un `ReferenceError` (`TOKEN` en lugar de `token`) que impedía la carga inicial de datos. No hubo errores de página ni respuestas HTTP ≥ 400 en el contexto de la SPA; el capturador de pantalla no se pudo inspeccionar visualmente con este modelo, por lo que la validación se apoyó en DOM y consola.
 
 **Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición real de 20 s en reposo (24 núcleos lógicos, monitorización y WFP activos) el servicio registró 79,9 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 82,0 MB y 2 %. El método y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
 
@@ -51,9 +62,9 @@ Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo u
 
 `install.cmd` publica `Aegis.Service` y `Aegis.UI` en un directorio temporal, comprueba los ejecutables generados y sustituye la instalación anterior mediante una copia de seguridad que se restaura si falla cualquier paso. Sin procesos propios en ejecución, crea `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`) con ACL restringida, copia las reglas y genera los `.cmd` de arranque. Estos `.cmd` exportan `AEGIS_DATA_DIR` y `AEGIS_RULES_DIR` para que los binarios usen exactamente las mismas rutas aisladas. No se escriben credenciales ni se contacta con servidores externos.
 
-Después, ejecute `finish.cmd` como administrador para restringir ACL, registrar las tareas de inicio de sesión y crear los accesos directos. Se mantiene como paso separado porque algunos productos de seguridad bloquean scripts que combinan elevación, ACL y persistencia en un único archivo. Acepta argumentos opcionales para pruebas aisladas: `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME]`; sin ellos usa las rutas y nombres de producción.
+Después, ejecute `finish.cmd` como administrador para restringir ACL, registrar el servicio SCM con inicio automático y crear los accesos directos. Se mantiene como paso separado porque algunos productos de seguridad bloquean scripts que combinan elevación, ACL y persistencia en un único archivo. Acepta argumentos opcionales para pruebas aisladas: `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME]`; sin ellos usa `AegisGuardSvc` y el resto de nombres de producción. El servicio no depende de que exista una sesión de usuario.
 
-El instalador y el desinstalador aceptan `-InstallDir` y `-DataDir`, por lo que pueden verificarse en una carpeta temporal sin modificar `C:\Program Files` ni `C:\ProgramData`. El desinstalador también admite `-TaskPrefix` y `-ShortcutName` para limpiar despliegues aislados. El ciclo completo (instalar → `finish` → arrancar binarios → desinstalar) se validó en una ruta aislada.
+El instalador y el desinstalador aceptan `-InstallDir` y `-DataDir`, por lo que pueden verificarse en una carpeta temporal sin modificar `C:\Program Files` ni `C:\ProgramData`. El desinstalador también admite `-TaskPrefix`, `-ServiceName` y `-ShortcutName` para limpiar despliegues aislados. El ciclo completo (instalar → `finish` → servicio activo → desinstalar) se validó en una ruta aislada.
 
 Para desinstalar:
 

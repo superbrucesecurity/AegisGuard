@@ -161,6 +161,8 @@ public sealed class PolicySettings
 public sealed class RuntimeStatus
 {
     public bool ServiceRunning { get; set; } = true;
+    public string ServiceName { get; set; } = "AegisGuardSvc";
+    public bool ManagedByScm { get; set; }
     public bool MonitorActive { get; set; }
     public bool EtwActive { get; set; }
     public bool FirewallActive { get; set; }

@@ -146,7 +146,9 @@
     const [heroTitle, heroDescription, tone] = labels[s.protectionState] || labels.starting;
     $('#heroTitle').textContent = heroTitle;
     $('#heroDescription').textContent = heroDescription;
-    $('#engineText').textContent = s.monitorActive ? 'Motor activo' : 'Motor inactivo';
+    $('#engineText').textContent = s.monitorActive
+      ? (s.managedByScm ? `Motor activo · ${s.serviceName || 'servicio SCM'}` : 'Motor activo')
+      : 'Motor inactivo';
     $('#engineDot').className = `dot ${s.monitorActive ? 'online' : 'offline'}`;
     $('#navThreatCount').textContent = number(s.threatsTotal);
     $('#kpiEvents').textContent = number(s.eventsTotal);
@@ -162,6 +164,7 @@
       ['Monitorización', s.monitorActive, 'good'],
       ['ETW', s.etwActive, s.etwActive ? 'good' : 'warn'],
       ['Firewall WFP', s.firewallActive, s.firewallActive ? 'good' : 'warn'],
+      ['Servicio SCM', !!s.managedByScm, s.managedByScm ? 'good' : 'warn'],
       ['Sin pérdida de eventos', (s.droppedEvents || 0) === 0 && !s.queueSaturated && !s.watchersDegraded,
         (s.droppedEvents || 0) === 0 && !s.queueSaturated && !s.watchersDegraded ? 'good' : 'warn'],
       ['Motor local', s.monitorActive, 'good'],
@@ -181,6 +184,8 @@
       ['Motor en tiempo real', s.monitorActive],
       ['Telemetría ETW', s.etwActive, 'ETW no disponible; se usa sondeo de procesos'],
       ['Firewall de Windows disponible', s.firewallActive],
+      ['Servicio automático del sistema', !!s.managedByScm,
+        s.managedByScm ? 'Registrado en el SCM' : 'Ejecución manual; use finish.cmd para registrarlo'],
       ['Eventos observados', (s.eventsTotal || 0) > 0],
       ['Sin pérdida de visibilidad', (s.droppedEvents || 0) === 0 && !s.watchersDegraded && !s.queueSaturated,
         'Se descartaron eventos o un watcher dejó de informar'],
@@ -578,7 +583,7 @@
     });
 
     window.addEventListener('resize', () => { if (state.view === 'dashboard') drawChart(); });
-    if (!TOKEN) toast('No se encontró la credencial local; reinicie la aplicación de escritorio.', true);
+    if (!token) toast('No se encontró la credencial local; reinicie la aplicación de escritorio.', true);
   }
 
   bind();

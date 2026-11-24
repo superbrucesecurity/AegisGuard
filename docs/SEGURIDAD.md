@@ -8,13 +8,19 @@ El producto no usa claves de API, cuentas de usuario ni servicios de inferencia.
 
 - La UI recibe el token del archivo `ui-token`, inyectado por WebView2 en la página cargada.
 - El token local **no es efímero**: se conserva entre arranques. Solo se sustituye si falta, está truncado o no es Base64 de 32 bytes; el contenido inválido se copia a `ui-token.invalid-*` antes de sobrescribir el archivo de forma atómica.
-- El archivo `ui-token` se crea con ACL que solo concede acceso a SYSTEM, administradores y el usuario del servicio. Si ya existía con permisos débiles, se repara automáticamente al cargarlo.
+- El archivo `ui-token` se crea con ACL que solo concede acceso a SYSTEM, administradores, el usuario del servicio y, en instalaciones SCM, el SID del usuario interactivo registrado por `finish.cmd`. El usuario interactivo solo recibe lectura, suficiente para que WebView2 inyecte el token; si ya existía con permisos débiles, se repara automáticamente al cargarlo.
 - Escucha solo en loopback.
 - Middleware rechaza cualquier `Host` distinto de `127.0.0.1` / `localhost` / `[::1]`.
 - Authorization Bearer obligatoria para `/api`, comparada en tiempo constante sobre el hash de la cabecera y del token (sin filtrar longitud).
 - Si el servicio regenera el token mientras la UI está abierta, la SPA recarga una sola vez para que WebView2 vuelva a inyectarlo; un segundo `401` se informa sin bucle.
 - CSP restrictiva, `X-Frame-Options: DENY`, `nosniff` y `no-referrer`.
 - WebView2 sin DevTools, menú contextual, autoguardado de contraseñas, autocompletado, host objects ni mensajería web.
+
+## Servicio SCM y privilegios
+
+`finish.cmd` registra `AegisGuardSvc` con `sc.exe`, inicio automático sin sesión y acciones de recuperación. El `binPath` apunta directamente a `Aegis.Service.exe`; las rutas de datos/reglas y el SID de la UI se pasan como variables de entorno del servicio en el registro del SCM, no como secretos: no hay claves ni cuentas. `UseWindowsService` atiende los controles de stop/shutdown y drena la cola antes de apagar. El registro de eventos usa el nombre del servicio como proveedor; la ACL del directorio de estado sigue restringida a SYSTEM, administradores, usuario del servicio y lectura para el usuario interactivo.
+
+Bajo `LocalSystem`, el watcher usa `AegisProfilePaths` para vigilar Desktop/Documentos/Downloads del usuario interactivo en lugar del perfil `systemprofile`; si no se puede resolver el SID, la falta de directorios se refleja en el estado real y no se finge cobertura.
 
 ## Privacidad de los datos
 
@@ -28,7 +34,7 @@ Los códigos se mapean a estados verificables: `SignedTrusted`, `Unsigned`, `Sig
 
 ## Colas y visibilidad
 
-Las observaciones críticas (canarios, manipulación de manifiesto, C2, reutilización de PID, saturación) usan una cola prioritaria drenada antes que la normal. La coalescencia se aplica después de registrar el primer evento; los descartes reales se contabilizan y elevan el estado a `degraded`. Si un `FileSystemWatcher` informa de error, se marca degradación, se descarta y se recrea; la pérdida nunca se oculta como protección completa.
+Las observaciones críticas (canarios, manipulación de manifiesto, C2, reutilización de PID, saturación) usan una cola prioritaria drenada antes que la normal. La coalescencia se aplica después de registrar el primer evento: los duplicados incrementan `coalescedEvents` pero **no** `droppedEvents`, porque no hay pérdida de visibilidad. Solo los descartes reales (cola llena, `DropOldest`, watcher en error) elevan el estado a `degraded`. Si un `FileSystemWatcher` informa de error, se marca degradación, se descarta y se recrea; la pérdida nunca se oculta como protección completa.
 
 ## Canarios
 

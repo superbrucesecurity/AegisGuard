@@ -115,6 +115,7 @@ public sealed class MonitoringWorker : BackgroundService
             _state.NormalQueueDepth = _queue.NormalDepth;
             _state.OldestQueuedSeconds = _queue.OldestQueuedSeconds;
             _state.QueueSaturated = _queue.Saturated;
+            _state.CoalescedEvents = _queue.Coalesced;
             if (_queue.Dropped > 0 && Interlocked.Exchange(ref _queueAlertSent, 1) == 0)
             {
                 _logger.LogWarning("Pérdida de visibilidad: {Dropped} eventos descartados por saturación", _queue.Dropped);
@@ -250,15 +251,9 @@ public sealed class MonitoringWorker : BackgroundService
 
     private void StartFileWatchers()
     {
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var dirs = new[]
-        {
-            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            Path.Combine(profile, "Downloads"),
-            Path.GetTempPath()
-        }.Where(d => !string.IsNullOrWhiteSpace(d) && Directory.Exists(d))
-         .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // Bajo SCM el proceso se ejecuta como LocalSystem: usar las rutas del
+        // usuario interactivo registradas por el instalador, no systemprofile.
+        var dirs = AegisProfilePaths.UserDirectories();
 
         lock (_watchersGate)
         {
@@ -468,10 +463,12 @@ public sealed class MonitoringWorker : BackgroundService
 
     private void Enqueue(Observation observation)
     {
-        // Contar solo lo que entró realmente en la cola. Los duplicados
-        // coalescionados se contabilizan aparte y no se presentan como eventos.
-        if (_queue.TryEnqueue(observation)) Interlocked.Increment(ref _state.EventsTotal);
-        else Interlocked.Increment(ref _state.DroppedEvents);
+        // Solo la pérdida real degrada el estado. Los duplicados coalescionados
+        // se contabilizan en CoalescedEvents, no como eventos descartados.
+        if (_queue.TryEnqueue(observation, out var coalesced))
+            Interlocked.Increment(ref _state.EventsTotal);
+        else if (!coalesced)
+            Interlocked.Increment(ref _state.DroppedEvents);
         _state.CoalescedEvents = _queue.Coalesced;
     }
 

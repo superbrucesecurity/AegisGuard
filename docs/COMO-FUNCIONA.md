@@ -43,7 +43,7 @@ Cada observación se enriquece con señales que no salen del equipo:
 | Firma Authenticode | Distingue firmado de confianza, firmado no válido y sin firma. |
 | Reputación local | Historial de decisiones de la sesión, en memoria y sin consultas remotas. |
 | YARA-lite | Subconjunto de YARA: cadenas, hexadecimal con `??`, `nocase`/`wide` y `severity`. |
-| Heurística | Banderas realmente producidas por el monitor: persistencia en registro, modificación de canarios, beacon C2, ejecución desde `%TEMP%` y padre inusual (Office). |
+| Heurística | Banderas realmente producidas por el monitor: persistencia en registro, modificación de canarios, manifiesto de canarios alterado, beacon C2, ejecución desde `%TEMP%` y padre inusual (Office). |
 
 Las banderas que el monitor no produce se ignoran: no puntúan capacidades no implementadas. `Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
 

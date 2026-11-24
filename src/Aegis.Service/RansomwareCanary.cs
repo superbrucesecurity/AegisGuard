@@ -12,15 +12,30 @@ namespace Aegis.Service;
 /// </summary>
 public sealed class RansomwareCanary
 {
+    private const int ManifestVersion = 2;
+    private const string KeyLabel = "AegisGuard.Canary.v1";
     private readonly Dictionary<string, string> _hashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _alerted = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _manifestPath;
+    private readonly IReadOnlyList<string>? _targets;
     private readonly object _gate = new();
+    private volatile bool _manifestTampered;
 
-    public RansomwareCanary(string root)
+    public RansomwareCanary(string root, IEnumerable<string>? targets = null)
     {
         _manifestPath = Path.Combine(root, "canaries.json");
+        _targets = targets?.ToList();
     }
+
+    public string ManifestPath => _manifestPath;
+
+    /// <summary>
+    /// El manifiesto no coincide con su HMAC local. No implica que un atacante
+    /// haya eludido la protección: solo que la baseline fue editada o corrupta.
+    /// </summary>
+    public bool ManifestTampered => _manifestTampered;
+
+    public string IntegrityStatus { get; private set; } = "new";
 
     public IReadOnlyList<string> Paths
     {
@@ -33,12 +48,12 @@ public sealed class RansomwareCanary
         lock (_gate)
         {
             LoadManifest();
-            var targets = new[]
+            var targets = (_targets ?? new[]
             {
                 Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
-            }.Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p)).Distinct(StringComparer.OrdinalIgnoreCase);
+            }).Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p)).Distinct(StringComparer.OrdinalIgnoreCase);
 
             foreach (var target in targets)
             {
@@ -99,29 +114,84 @@ public sealed class RansomwareCanary
         {
             var manifest = JsonSerializer.Deserialize<CanaryManifest>(File.ReadAllText(_manifestPath), JsonDefaults.Options);
             if (manifest is null) return;
+            IntegrityStatus = Verify(manifest) ? "ok" : "invalid";
+            if (IntegrityStatus == "invalid") _manifestTampered = true;
             foreach (var (path, hash) in manifest.Hashes) _hashes[path] = hash;
             foreach (var (path, hash) in manifest.Alerted) _alerted[path] = hash;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or FormatException)
         {
             // Sin baseline fiable se recalcula, pero el servicio sigue arrancando.
             _hashes.Clear();
             _alerted.Clear();
+            IntegrityStatus = "invalid";
+            _manifestTampered = true;
         }
+    }
+
+    private static bool Verify(CanaryManifest manifest)
+    {
+        // Versiones anteriores no tenían firma: se migran una sola vez y se
+        // firman al guardar. Un manifiesto con versión 2 y firma ausente o
+        // distinta se considera alterado.
+        if (manifest.Version is null or < ManifestVersion) return true;
+        if (string.IsNullOrWhiteSpace(manifest.Signature)) return false;
+        try
+        {
+            var expected = Convert.FromHexString(Sign(manifest));
+            var actual = Convert.FromHexString(manifest.Signature);
+            return CryptographicOperations.FixedTimeEquals(expected, actual);
+        }
+        catch (FormatException) { return false; }
+    }
+
+    private static string Sign(CanaryManifest manifest)
+    {
+        var canonical = new
+        {
+            version = ManifestVersion,
+            hashes = manifest.Hashes.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
+            alerted = manifest.Alerted.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase)
+        };
+        return Convert.ToHexString(HMACSHA256.HashData(ManifestKey(),
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(canonical, JsonDefaults.Options)))).ToLowerInvariant();
+    }
+
+    private static byte[] ManifestKey()
+    {
+        var label = Encoding.UTF8.GetBytes(KeyLabel);
+        // DPAPI liga la clave al usuario del servicio. No resiste a un proceso
+        // con los mismos privilegios: detecta edición casual o corrupción, no
+        // sustituye a un control de integridad en kernel.
+        return SHA256.HashData(OperatingSystem.IsWindows()
+            ? ProtectedData.Protect(label, null, DataProtectionScope.CurrentUser)
+            : label);
     }
 
     private void SaveManifest()
     {
-        var manifest = new CanaryManifest { Hashes = _hashes, Alerted = _alerted };
+        var manifest = new CanaryManifest
+        {
+            Version = ManifestVersion,
+            Hashes = _hashes,
+            Alerted = _alerted
+        };
+        manifest.Signature = Sign(manifest);
         var temp = _manifestPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(manifest, JsonDefaults.Options));
         File.Move(temp, _manifestPath, true);
+        if (!_manifestTampered) IntegrityStatus = "ok";
     }
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private sealed class CanaryManifest
     {
+        // Sin inicializador: ausencia = manifiesto heredado no firmado.
+        public int? Version { get; set; }
+        public string Signature { get; set; } = string.Empty;
         public Dictionary<string, string> Hashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string> Alerted { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }

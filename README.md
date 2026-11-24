@@ -21,9 +21,9 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 61 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 64 casos | `tests/Aegis.Checks`. |
 
-**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición real de 20 s en reposo (24 núcleos lógicos, monitorización y WFP activos) el servicio registró 77,2 MB de RAM media y 0,05 % de CPU media, con máximos puntuales de 78,6 MB y 1 %. El método y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
+**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición real de 20 s en reposo (24 núcleos lógicos, monitorización y WFP activos) el servicio registró 79,9 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 82,0 MB y 2 %. El método y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
 
 ## Requisitos
 

@@ -94,13 +94,15 @@ public sealed class DecisionEngine
             var weight = flag switch
             {
                 "ransomware_canary_modified" => 55,
+                "canary_manifest_tampered" => 55,
                 "c2_beacon" => 45,
                 "persistence_registry" => 35,
                 "unusual_parent" or "temp_execution" => 14,
                 _ => 0
             };
             if (weight == 0) continue;
-            Add("behavior", flag, weight, flag == "ransomware_canary_modified");
+            Add("behavior", flag, weight,
+                flag is "ransomware_canary_modified" or "canary_manifest_tampered");
         }
 
         if (!string.IsNullOrWhiteSpace(observation.RemoteAddress) && IsPublicIp(observation.RemoteAddress))

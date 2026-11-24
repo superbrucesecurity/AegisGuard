@@ -110,6 +110,22 @@ public sealed class DecisionEngineTests
     }
 
     [Fact]
+    public void CanaryManifestTamperingIsCriticalLocalEvidence()
+    {
+        var observation = new Observation
+        {
+            Kind = EventKind.PersistenceChanged,
+            Subject = @"C:\ProgramData\AegisGuard\canaries.json",
+            BehaviorFlags = ["canary_manifest_tampered"]
+        };
+        var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        Assert.Equal(55, local.Score);
+        Assert.True(local.HasCriticalIndicator);
+        Assert.False(local.HasVerifiedIndicator);
+    }
+
+    [Fact]
     public void KnownHashSetsVerifiedIndicator()
     {
         const string hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";

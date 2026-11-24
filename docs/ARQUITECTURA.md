@@ -45,9 +45,9 @@ El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el 
 
 ## Límites conocidos
 
-- Sin driver kernel: no hay detección de inyección de procesos a bajo nivel ni protección antimanipulación de procesos propios más allá de ACL y DPAPI.
+- Sin driver kernel: no hay detección de inyección de procesos a bajo nivel ni protección antimanipulación de procesos propios más allá de ACL y DPAPI. El HMAC del manifiesto de canarios detecta cambios accidentales, pero un proceso con los mismos privilegios puede recalcularlo.
 - ETW depende de que los providers estén habilitados y de los permisos del proceso.
-- La RAM en reposo medida durante 20 s fue de 77,2 MB de media y 78,6 MB de máximo; la CPU media fue del 0,05 %. Ver [benchmarks](BENCHMARKS.md).
+- La RAM en reposo medida durante 20 s fue de 79,9 MB de media y 82,0 MB de máximo; la CPU media fue del 0,25 % con un pico puntual del 2 %. Ver [benchmarks](BENCHMARKS.md).
 - La reputación vive en memoria y se reinicia con el servicio: no es una lista persistente de reputación.
 - No hay canal de actualización automática de firmas. Cualquier mecanismo futuro debe verificar firma digital y hash, y ser opcional.
 - Las listas de dominios/IP de `threat-intel.json` se entregan vacías en esta versión: las reglas y el hash EICAR son la base usable de detección.

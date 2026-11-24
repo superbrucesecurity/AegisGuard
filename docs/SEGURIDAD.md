@@ -21,7 +21,9 @@ Las observaciones y decisiones se escriben únicamente en `events.jsonl` y `thre
 
 ## Canarios
 
-Los ficheros señuelo se crean con atributos oculto, sistema y solo lectura, y con ACL restringida a SYSTEM, administradores y usuario del servicio. Su baseline se guarda en `canaries.json` bajo `%AEGIS_DATA_DIR%`. Sin un controlador en kernel no es posible impedir que un proceso con los privilegios del usuario altere estos ficheros: la detección se basa en comparar el hash del baseline.
+Los ficheros señuelo se crean con atributos oculto, sistema y solo lectura, y con ACL restringida a SYSTEM, administradores y usuario del servicio. Su baseline se guarda en `canaries.json` bajo `%AEGIS_DATA_DIR%`, con un HMAC-SHA256 cuya clave se deriva de DPAPI ligada al usuario del servicio. Si el manifiesto se edita o corrompe se genera la bandera `canary_manifest_tampered`, puntuada como evidencia crítica local. Los manifiestos antiguos sin versión se migran una sola vez y se firman al guardar.
+
+Este HMAC detecta edición casual o corrupción, **no** resiste a un proceso con los mismos privilegios que puede recalcular la clave DPAPI y volver a firmar: sin controlador en kernel no hay una frontera de integridad fuerte. La protección real sigue siendo la comparación del hash del fichero señuelo frente a la baseline.
 
 ## Cuarentena
 

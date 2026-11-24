@@ -44,6 +44,17 @@ public sealed class MonitoringWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _processorTask = Task.Run(() => ProcessQueueAsync(stoppingToken), stoppingToken);
+        if (_canary.ManifestTampered)
+        {
+            _logger.LogWarning("El manifiesto de canarios no supera la comprobación de integridad local.");
+            Enqueue(new Observation
+            {
+                Kind = EventKind.PersistenceChanged,
+                Subject = _canary.ManifestPath,
+                BehaviorFlags = ["canary_manifest_tampered"],
+                Source = "canary-manifest"
+            });
+        }
         StartEtw(stoppingToken);
         StartFileWatchers();
         // El respaldo arranca solo si ETW no está disponible o se detiene.

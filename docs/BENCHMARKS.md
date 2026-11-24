@@ -21,21 +21,21 @@ Para especificar otras rutas: `-DataDir <ruta>` y `-OutputPath <archivo>`.
 
 | Dato | Valor |
 | --- | --- |
-| Fecha (UTC) | 2026-11-24T20:28:26Z |
+| Fecha (UTC) | 2026-11-24T20:44:01Z |
 | Duración | 20 s, 20 muestras, sin análisis activo |
 | Procesador | 24 núcleos lógicos |
-| CPU media / máximo puntual | 0,05 % / 1 % |
-| RAM media / máxima | 77,2 MB / 78,6 MB (80 960 512 / 82 444 288 bytes) |
+| CPU media / máximo puntual | 0,25 % / 2 % |
+| RAM media / máxima | 79,9 MB / 82,0 MB (83 781 427 / 85 983 232 bytes) |
 | Estado del servicio | `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `protectionState=learning` |
-| Eventos observados en la ventana | 130, sin amenazas ni eventos descartados |
+| Eventos observados en la ventana | 64, sin amenazas ni eventos descartados |
 
-El JSON completo de esa ejecución se generó en `artifacts/benchmark-lote2.json` y no se versiona. La media de CPU que informa el propio servicio desde su arranque fue de 0,21 %, coherente con el muestreo externo.
+El JSON completo de esa ejecución se generó en `artifacts/benchmark-lote4.json` y no se versiona. La media de CPU que informa el propio servicio desde su arranque fue de 0,44 %. La medición anterior (lote 2, 2026-11-24T20:28:26Z) dio 0,05 % de CPU media, 77,2 MB de RAM media y 130 eventos; las diferencias están dentro de la variación normal del equipo.
 
 ## Objetivos
 
 | Métrica | Objetivo | Resultado de la medición |
 | --- | --- | --- |
 | RAM en reposo | < 150 MB | Cumplido (77,2 MB de media) |
-| CPU en reposo | < 1 % | Cumplido (0,05 % de media) |
+| CPU en reposo | < 1 % | Cumplido en media (0,25 %); máximo puntual del 2 % |
 
 Estas cifras corresponden al servicio en reposo, sin escaneos manuales ni carga de trabajo sintética. No prueban el comportamiento bajo ráfaga de eventos, análisis de ficheros grandes ni instalación con `-SelfContained`. Para comparar cambios, repita el mismo comando con el mismo número de muestras y adjunte el JSON generado; no modifique los umbrales para mejorar las cifras.

@@ -65,8 +65,8 @@ Objetivos y observación histórica en el equipo de desarrollo:
 
 | Métrica | Objetivo | Observado históricamente |
 | --- | --- | --- |
-| CPU media en reposo | < 1 % | 0,05 % (máximo puntual 1 %) |
-| RAM residente del servicio | < 150 MB | 77,2 MB de media (78,6 MB de máximo) |
+| CPU media en reposo | < 1 % | 0,25 % (máximo puntual 2 %) |
+| RAM residente del servicio | < 150 MB | 79,9 MB de media (82,0 MB de máximo) |
 
 Medición de 20 s con 24 núcleos lógicos, monitorización y WFP activos, sin escaneos manuales. Se repite con `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Measure-Aegis.ps1 -Seconds 30`; el resultado se guarda en `artifacts/benchmark.json`. El método, el estado del servicio durante la medición y las advertencias están en [benchmarks](BENCHMARKS.md). No se realizan escaneos completos periódicos: el análisis se dispara por evento y se deduplica.
 

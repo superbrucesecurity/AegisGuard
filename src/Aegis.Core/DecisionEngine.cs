@@ -49,16 +49,17 @@ public sealed class DecisionEngine
     public LocalAssessment Assess(Observation observation, IReadOnlyList<RuleMatch> ruleMatches, IReadOnlySet<string> maliciousHashes)
     {
         var assessment = new LocalAssessment();
-        void Add(string source, string reason, double weight, bool critical = false)
+        void Add(string source, string reason, double weight, bool critical = false, bool verified = false)
         {
             assessment.Score += weight;
             assessment.EvidenceCount++;
             assessment.Contributions.Add(new ScoreContribution { Source = source, Reason = reason, Weight = weight });
             if (critical) assessment.HasCriticalIndicator = true;
+            if (verified) assessment.HasVerifiedIndicator = true;
         }
 
         if (!string.IsNullOrWhiteSpace(observation.Sha256) && maliciousHashes.Contains(observation.Sha256))
-            Add("hash", "Hash en lista de denegación", 100, true);
+            Add("hash", "Hash en lista de denegación", 100, critical: true, verified: true);
 
         // Una misma regla puede llegar desde el watcher y desde el escáner;
         // contarla dos veces inflaría el riesgo hasta una cuarentena espuria.
@@ -72,7 +73,7 @@ public sealed class DecisionEngine
                 Severity.Low => 9,
                 _ => 2
             };
-            Add("yara", $"{rule.RuleId}: {rule.Name}", weight, rule.Severity == Severity.Critical);
+            Add("yara", $"{rule.RuleId}: {rule.Name}", weight, rule.Severity == Severity.Critical, IsVerifiedRule(rule.RuleId));
         }
 
         if (observation.Signature == SignatureStatus.SignedUntrusted)
@@ -87,16 +88,18 @@ public sealed class DecisionEngine
 
         foreach (var flag in observation.BehaviorFlags.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            // Solo banderas que el monitor realmente produce. No se puntúan
-            // capacidades inexistentes (inyección, rootkits, escalada, etc.).
+            // Solo se puntúan las banderas que el monitor produce de verdad.
+            // Una bandera desconocida no es evidencia: evita que un dato
+            // manipulado o una capacidad no implementada infle el riesgo.
             var weight = flag switch
             {
                 "ransomware_canary_modified" => 55,
                 "c2_beacon" => 45,
                 "persistence_registry" => 35,
                 "unusual_parent" or "temp_execution" => 14,
-                _ => 8
+                _ => 0
             };
+            if (weight == 0) continue;
             Add("behavior", flag, weight, flag == "ransomware_canary_modified");
         }
 
@@ -106,6 +109,10 @@ public sealed class DecisionEngine
         assessment.Score = Math.Clamp(assessment.Score, 0, 100);
         return assessment;
     }
+
+    private static bool IsVerifiedRule(string ruleId) =>
+        ruleId.Equals("EICAR-STANDARD-TEST", StringComparison.OrdinalIgnoreCase) ||
+        ruleId.Equals("EICAR_Standard_Test_File", StringComparison.OrdinalIgnoreCase);
 
     private static Verdict VerdictFromRisk(double risk, PolicySettings policy)
     {

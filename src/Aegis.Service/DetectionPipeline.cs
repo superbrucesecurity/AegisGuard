@@ -12,6 +12,7 @@ public sealed class DetectionPipeline
     private readonly QuarantineManager _quarantine;
     private readonly EventStore _store;
     private readonly RuntimeState _state;
+    private readonly LocalReputation _reputation;
     private readonly FirewallManager _firewall;
     private readonly RansomwareCanary _canary;
     private readonly ILogger<DetectionPipeline> _logger;
@@ -23,6 +24,7 @@ public sealed class DetectionPipeline
         QuarantineManager quarantine,
         EventStore store,
         RuntimeState state,
+        LocalReputation reputation,
         FirewallManager firewall,
         RansomwareCanary canary,
         ILogger<DetectionPipeline> logger)
@@ -32,6 +34,7 @@ public sealed class DetectionPipeline
         _quarantine = quarantine;
         _store = store;
         _state = state;
+        _reputation = reputation;
         _firewall = firewall;
         _canary = canary;
         _logger = logger;
@@ -56,6 +59,8 @@ public sealed class DetectionPipeline
         await ApplyRemediationAsync(threat, policy, ct).ConfigureAwait(false);
         await _store.AppendAsync(threat).ConfigureAwait(false);
         _state.Record(decision);
+        _reputation.Record(observation.Sha256 ?? observation.Subject,
+            decision.Verdict is Verdict.Block or Verdict.Quarantine);
 
         if (decision.Severity >= Severity.High)
             _logger.LogInformation("Amenaza {Severity}: {Subject} -> {Verdict} (riesgo {Risk})", decision.Severity, observation.Subject, decision.Verdict, decision.Risk);
@@ -132,6 +137,9 @@ public sealed class DetectionPipeline
                 (!string.IsNullOrWhiteSpace(o.ParentProcess) && o.ParentProcess.Contains("EXCEL", StringComparison.OrdinalIgnoreCase)))
                 o.BehaviorFlags.Add("unusual_parent");
         }
+
+        // La reputación se lee aquí para que los eventos de fichero ya tengan hash.
+        o.Reputation = _reputation.Get(o.Sha256 ?? o.Subject);
     }
 
     private async Task ApplyRemediationAsync(ThreatRecord threat, PolicySettings policy, CancellationToken ct)
@@ -140,7 +148,7 @@ public sealed class DetectionPipeline
         var d = threat.Decision;
         var actions = new List<string>();
 
-        if (d.Verdict == Verdict.Quarantine && policy.AutoQuarantine &&
+        if (RemediationPolicy.ShouldQuarantine(d, policy) &&
             o.Kind is EventKind.FileCreated or EventKind.FileModified or EventKind.ManualScan &&
             PathPolicy.IsQuarantineSafe(o.Subject) && File.Exists(o.Subject))
         {
@@ -156,8 +164,8 @@ public sealed class DetectionPipeline
             }
         }
 
-        if (d.Verdict is Verdict.Block or Verdict.Quarantine &&
-            policy.AutoBlockNetwork && !string.IsNullOrWhiteSpace(o.RemoteAddress))
+        if (RemediationPolicy.ShouldBlockNetwork(d, policy) &&
+            !string.IsNullOrWhiteSpace(o.RemoteAddress))
         {
             var spec = new FirewallRuleSpec
             {
@@ -194,6 +202,12 @@ public sealed class DetectionPipeline
             var key = $"{Path.GetFileName(o.Subject)} -> {o.RemoteAddress}:{o.RemotePort}";
             _learnedConnections.AddOrUpdate(key, 1, (_, count) => Math.Min(count + 1, 9999));
         }
+
+        // En aprendizaje se conserva la decisión, pero se omite la acción
+        // automática salvo que exista un indicio verificado localmente.
+        if (policy.LearningMode && !d.Local.HasVerifiedIndicator &&
+            d.Verdict is Verdict.Block or Verdict.Quarantine)
+            actions.Add("modo-aprendizaje:sin acción automática");
 
         if (actions.Count > 0)
         {

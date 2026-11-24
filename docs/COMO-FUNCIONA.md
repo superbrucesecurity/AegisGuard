@@ -41,11 +41,11 @@ Cada observación se enriquece con señales que no salen del equipo:
 | --- | --- |
 | SHA-256 | Identidad del fichero y comparación con listas locales. |
 | Firma Authenticode | Distingue firmado de confianza, firmado no válido y sin firma. |
-| Reputación local | Prioridad según origen y frecuencia observada. |
+| Reputación local | Historial de decisiones de la sesión, en memoria y sin consultas remotas. |
 | YARA-lite | Subconjunto de YARA: cadenas, hexadecimal con `??`, `nocase`/`wide` y `severity`. |
 | Heurística | Banderas realmente producidas por el monitor: persistencia en registro, modificación de canarios, beacon C2, ejecución desde `%TEMP%` y padre inusual (Office). |
 
-`Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
+Las banderas que el monitor no produce se ignoran: no puntúan capacidades no implementadas. `Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
 
 ## 3. Decisión determinista local
 
@@ -60,11 +60,13 @@ Cada observación se enriquece con señales que no salen del equipo:
 
 Un indicador crítico local en un fichero (hash en lista de denegación o regla crítica) fuerza cuarentena; si la cuarentena está desactivada, degrada a bloqueo en lugar de permitir la amenaza. Las reglas duplicadas se cuentan una sola vez para no inflar el riesgo. Los umbrales se validan para permanecer ordenados por debajo de 100.
 
+En modo aprendizaje las decisiones se registran, pero no se aplican cuarentena ni bloqueo WFP automáticos. Los indicios verificados localmente (hash en lista de denegación o regla EICAR) se siguen aplicando para no desarmar la protección básica.
+
 ## 4. Remediación
 
 - **Firewall WFP:** usa COM `HNetCfg.FwPolicy2` para crear reglas con prefijo `AEGIS Guard`, auditables y eliminables. No hay driver de callout: no inspecciona tráfico en tiempo real ni bloquea conexiones anteriores a la regla.
 - **Cuarentena:** AES-GCM con clave protegida por DPAPI. El fichero se puede restaurar desde la UI; el purgado definitivo es explícito.
-- **Modo aprendizaje:** registra las conexiones nuevas en `/api/firewall/learned` para revisión; no crea reglas por sí mismo.
+- **Modo aprendizaje:** registra las conexiones nuevas en `/api/firewall/learned` para revisión y omite la remediación automática, salvo indicios verificados.
 
 ## 5. Interfaz y API
 
@@ -81,4 +83,4 @@ Los datos mostrados son reales: no hay valores de ejemplo ni controles decorativ
 - No promete detección absoluta; los umbrales están pendientes de calibrar con datos propios.
 - No realiza escaneos completos periódicos.
 
-El objetivo de RAM en reposo es < 150 MB. El histórico del servicio en el equipo de desarrollo se movió entre ~116 y ~166 MB; no hay un benchmark actualizado en este lote, así que la cifra no se presenta como cumplida.
+La medición en reposo de 20 s dio 77,2 MB de RAM media y 0,05 % de CPU media (máximos puntuales: 78,6 MB y 1 %). El procedimiento está en [benchmarks](BENCHMARKS.md).

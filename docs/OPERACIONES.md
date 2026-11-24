@@ -14,7 +14,7 @@ Invoke-RestMethod http://127.0.0.1:8787/api/status -Headers $h
 
 `healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`).
 
-El token local se genera al arrancar el servicio y se guarda con permisos restringidos a SYSTEM, administradores y usuario instalador. Reinicie el servicio si necesita invalidar una sesión.
+El token local se genera al arrancar el servicio y se guarda con permisos restringidos a SYSTEM, administradores y usuario del servicio. Si el archivo ya existía con una ACL débil, los permisos se reparan al cargarlo. Reinicie el servicio si necesita invalidar una sesión.
 
 ## Validación aislada del instalador
 
@@ -41,7 +41,7 @@ El desinstalador elimina tareas con el prefijo indicado (`AegisSmoke *`), acceso
 
 ## Ajustes recomendados
 
-- Mantenga `learningMode` activo unos días en equipos nuevos y revise `/api/firewall/learned`.
+- Mantenga `learningMode` activo unos días en equipos nuevos y revise `/api/firewall/learned`. En este modo no se aplican cuarentena ni bloqueo automáticos, salvo indicios verificados localmente.
 - `autoQuarantine` y `autoBlockNetwork` deben permanecer activos solo después de calibrar umbrales con datos propios.
 - No baje `blockThreshold` por debajo de 50 sin pruebas de falsos positivos.
 
@@ -65,10 +65,10 @@ Objetivos y observación histórica en el equipo de desarrollo:
 
 | Métrica | Objetivo | Observado históricamente |
 | --- | --- | --- |
-| CPU media en reposo | < 1 % | ~0,1–0,6 % con deduplicación de red |
-| RAM residente del servicio | < 150 MB | ~116–166 MB (sin benchmark actualizado) |
+| CPU media en reposo | < 1 % | 0,05 % (máximo puntual 1 %) |
+| RAM residente del servicio | < 150 MB | 77,2 MB de media (78,6 MB de máximo) |
 
-La RAM incluye el runtime de .NET 10, ASP.NET Core, el buffer de ETW y el histórico en memoria (`config.json → maxEvents`). No se realizan escaneos completos periódicos: el análisis se dispara por evento y se deduplica. Las cifras de CPU y RAM son históricas, no una medición de este lote.
+Medición de 20 s con 24 núcleos lógicos, monitorización y WFP activos, sin escaneos manuales. Se repite con `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Measure-Aegis.ps1 -Seconds 30`; el resultado se guarda en `artifacts/benchmark.json`. El método, el estado del servicio durante la medición y las advertencias están en [benchmarks](BENCHMARKS.md). No se realizan escaneos completos periódicos: el análisis se dispara por evento y se deduplica.
 
 ## Respuesta a incidentes
 

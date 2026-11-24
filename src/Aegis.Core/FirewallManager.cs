@@ -20,9 +20,10 @@ public sealed class FirewallManager
     private const int NetFwRuleDirOut = 2;
     private const int NetFwProtoAny = 256;
     private const int NetFwProfileAll = 0x7FFFFFFF;
+    private const string Prefix = "AEGIS Guard";
     private readonly object _gate = new();
 
-    public string ProductPrefix => "AEGIS Guard";
+    public string ProductPrefix => Prefix;
 
     public bool IsAvailable()
     {
@@ -130,14 +131,38 @@ public sealed class FirewallManager
     }
 
     /// <summary>
+    /// Acepta los formatos "N" (sin guiones, usado por ThreatRecord.Id) y "D"
+    /// (con guiones, usado por Guid.ToString). Rechaza cualquier otro texto.
+    /// </summary>
+    public static bool TryParseThreatId(string? threatId, out Guid guid)
+    {
+        if (!string.IsNullOrWhiteSpace(threatId) &&
+            (Guid.TryParseExact(threatId, "N", out guid) || Guid.TryParseExact(threatId, "D", out guid)))
+            return true;
+        guid = Guid.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Comprueba si una descripción pertenece a una regla automática del
+    /// hallazgo. Se aceptan ambos formatos del GUID para no dejar reglas
+    /// huérfanas al restaurar o purgar una amenaza.
+    /// </summary>
+    public static bool IsThreatRuleDescription(string? description, string? threatId)
+    {
+        if (string.IsNullOrWhiteSpace(description) || !TryParseThreatId(threatId, out var guid)) return false;
+        return description.StartsWith($"{Prefix} - {guid:N} -", StringComparison.OrdinalIgnoreCase) ||
+               description.StartsWith($"{Prefix} - {guid:D} -", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Elimina las reglas creadas automáticamente para un hallazgo. La Description
     /// incluye el ThreatId, lo que permite no tocar reglas de otros productos ni
     /// reglas creadas manualmente por el usuario.
     /// </summary>
     public int RemoveRulesForThreat(string threatId)
     {
-        if (!Guid.TryParseExact(threatId, "D", out _)) return 0;
-        var marker = $"{ProductPrefix} - {threatId} -";
+        if (!TryParseThreatId(threatId, out _)) return 0;
         object? policy = null;
         lock (_gate)
         {
@@ -151,7 +176,7 @@ public sealed class FirewallManager
                     try
                     {
                         var description = (string?)rule.Description ?? string.Empty;
-                        if (description.StartsWith(marker, StringComparison.OrdinalIgnoreCase))
+                        if (IsThreatRuleDescription(description, threatId))
                             names.Add((string)rule.Name);
                     }
                     finally { Release(rule); }

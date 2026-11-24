@@ -200,6 +200,33 @@ public sealed class YaraLiteTests
     }
 
     [Fact]
+    public void CommentsInsideConditionDoNotDiscardTheRule()
+    {
+        const string source = """
+            rule Commented
+            {
+                strings:
+                    $a = "marker"
+                condition:
+                    // solo una señal, pero documentada
+                    any of them
+            }
+            """;
+
+        var rule = Assert.Single(new YaraLiteEngine().Parse(source));
+        Assert.Equal("any of them", rule.Condition);
+    }
+
+    [Fact]
+    public void BundledHeuristicRulesRequireMoreThanOneString()
+    {
+        var rules = new YaraLiteEngine().Parse(File.ReadAllText(Path.Combine(GetRulesDirectory(), "suspicious_basics.yar")));
+
+        Assert.Contains(rules, r => r.Id == "Mimikatz_Indicators" && r.Condition.Contains("all of them", StringComparison.Ordinal));
+        Assert.Contains(rules, r => r.Id == "Ransomware_Note" && r.Condition.Contains("2 of them", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void MalformedRuleIsRejected()
     {
         var engine = new YaraLiteEngine();

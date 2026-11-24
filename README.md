@@ -21,9 +21,9 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 42 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 58 casos | `tests/Aegis.Checks`. |
 
-**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. El objetivo de RAM en reposo es < 150 MB; el histórico del servicio en el equipo de desarrollo se movió entre ~116 y ~166 MB y aún no hay un benchmark actualizado que acredite la cifra, así que no se presenta como cumplido. Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
+**Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición real de 20 s en reposo (24 núcleos lógicos, monitorización y WFP activos) el servicio registró 77,2 MB de RAM media y 0,05 % de CPU media, con máximos puntuales de 78,6 MB y 1 %. El método y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
 
 ## Requisitos
 
@@ -101,9 +101,10 @@ Después, en la UI: **Analizar archivo** y pegar la ruta. En este equipo Bitdefe
 - [Arquitectura](docs/ARQUITECTURA.md)
 - [Operaciones](docs/OPERACIONES.md)
 - [Seguridad y privacidad](docs/SEGURIDAD.md)
+- [Benchmarks](docs/BENCHMARKS.md)
 
 ## Configuración local
 
-`%AEGIS_DATA_DIR%\config.json` contiene la política de detección (umbrales, `autoQuarantine`, `autoBlockNetwork`, `learningMode` y `maxEvents`). Se puede editar desde la UI (**Configuración**) o con `PUT /api/settings`. No contiene secretos.
+`%AEGIS_DATA_DIR%\config.json` contiene la política de detección (umbrales, `autoQuarantine`, `autoBlockNetwork`, `learningMode` y `maxEvents`). Se puede editar desde la UI (**Configuración**) o con `PUT /api/settings`. No contiene secretos. `learningMode` observa y registra las decisiones sin aplicar cuarentena ni bloqueo automático, salvo indicios verificados en el equipo (hash en lista local o regla EICAR).
 
 Las detecciones se basan en los archivos de `%AEGIS_RULES_DIR%` (por defecto `C:\Program Files\AegisGuard\rules`): reglas `*.yar` (YARA-lite), `threat-intel.json` (hashes, dominios y direcciones IP) y `eicar.yar`. En tiempo de ejecución no se descarga nada. Cualquier actualización futura de firmas deberá ser firmada, verificable y opcional: la protección local no dependerá de ella.

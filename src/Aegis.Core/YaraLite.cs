@@ -90,9 +90,15 @@ public sealed class YaraLiteEngine
             }
 
             var condition = Regex.Match(body, @"condition\s*:(?<v>.*)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            if (!condition.Success || string.IsNullOrWhiteSpace(condition.Groups["v"].Value))
+            // Los comentarios en la condición son habituales en reglas mantenidas
+            // por personas; se retiran antes de tokenizar para no descartar la
+            // regla completa por una anotación.
+            var conditionText = condition.Success
+                ? Regex.Replace(condition.Groups["v"].Value, @"//[^\r\n]*", string.Empty).Trim()
+                : string.Empty;
+            if (conditionText.Length == 0)
                 throw new FormatException($"Regla {rule.Name} sin condición");
-            rule.Condition = condition.Groups["v"].Value.Trim();
+            rule.Condition = conditionText;
 
             // Rechazar números desbordados al cargar: nunca deben lanzar desde
             // el escáner y hacer perder el evento que se está procesando.

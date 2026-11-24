@@ -8,6 +8,7 @@ El producto no usa claves de API, cuentas de usuario ni servicios de inferencia.
 
 - La UI recibe el token del archivo `ui-token`, inyectado por WebView2 en la página cargada.
 - El token local **no es efímero**: se genera al arrancar el servicio y permanece válido hasta el siguiente arranque. No se envía fuera de `127.0.0.1`; reinicie el servicio para invalidarlo.
+- El archivo `ui-token` se crea con ACL que solo concede acceso a SYSTEM, administradores y el usuario del servicio. Si ya existía con permisos débiles, se repara automáticamente al cargarlo.
 - Escucha solo en loopback.
 - Middleware rechaza cualquier `Host` distinto de `127.0.0.1` / `localhost` / `[::1]`.
 - Authorization Bearer obligatoria para `/api`.
@@ -16,7 +17,11 @@ El producto no usa claves de API, cuentas de usuario ni servicios de inferencia.
 
 ## Privacidad de los datos
 
-Las observaciones y decisiones se escriben únicamente en `events.jsonl` y `threats.jsonl` bajo `%AEGIS_DATA_DIR%`, con ACL restringida. El contenido de los ficheros analizados se procesa en memoria para calcular hash, firma y reglas; no se envía a ningún servidor. No hay telemetría saliente.
+Las observaciones y decisiones se escriben únicamente en `events.jsonl` y `threats.jsonl` bajo `%AEGIS_DATA_DIR%`, con ACL restringida. El contenido de los ficheros analizados se procesa en memoria para calcular hash, firma y reglas; no se envía a ningún servidor. La reputación es un historial en memoria de la sesión y no se persiste. No hay telemetría saliente.
+
+## Canarios
+
+Los ficheros señuelo se crean con atributos oculto, sistema y solo lectura, y con ACL restringida a SYSTEM, administradores y usuario del servicio. Su baseline se guarda en `canaries.json` bajo `%AEGIS_DATA_DIR%`. Sin un controlador en kernel no es posible impedir que un proceso con los privilegios del usuario altere estos ficheros: la detección se basa en comparar el hash del baseline.
 
 ## Cuarentena
 

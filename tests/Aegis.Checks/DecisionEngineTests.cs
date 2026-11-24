@@ -92,7 +92,7 @@ public sealed class DecisionEngineTests
     }
 
     [Fact]
-    public void UnimplementedBehaviorFlagsDoNotCreateCriticalEvidence()
+    public void UnknownBehaviorFlagsAreIgnored()
     {
         var observation = new Observation
         {
@@ -103,9 +103,21 @@ public sealed class DecisionEngineTests
         };
         var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
-        Assert.Equal(24, local.Score);
+        Assert.Equal(0, local.Score);
         Assert.False(local.HasCriticalIndicator);
+        Assert.False(local.HasVerifiedIndicator);
         Assert.Equal(Verdict.Allow, _engine.Decide(observation, local, _policy).Verdict);
+    }
+
+    [Fact]
+    public void KnownHashSetsVerifiedIndicator()
+    {
+        const string hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";
+        var observation = new Observation { Kind = EventKind.ManualScan, Subject = @"C:\Temp\eicar.txt", Sha256 = hash };
+        var local = _engine.Assess(observation, [], new HashSet<string>([hash], StringComparer.OrdinalIgnoreCase));
+
+        Assert.True(local.HasVerifiedIndicator);
+        Assert.True(local.HasCriticalIndicator);
     }
 
     [Fact]

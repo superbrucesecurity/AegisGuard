@@ -49,6 +49,7 @@ public sealed class RansomwareCanary
                     {
                         var content = $"AEGIS Guard canary. Do not modify. {Guid.NewGuid():N}{Environment.NewLine}";
                         File.WriteAllText(name, content, Encoding.UTF8);
+                        LocalFileAcl.Restrict(name);
                         File.SetAttributes(name, FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReadOnly);
                     }
                     // Baseline nuevo: no se crea uno nuevo si ya existía en el
@@ -88,17 +89,6 @@ public sealed class RansomwareCanary
             _alerted[path] = current;
             SaveManifest();
             return true;
-        }
-    }
-
-    public void Refresh(string path)
-    {
-        lock (_gate)
-        {
-            if (!_hashes.ContainsKey(path) || !File.Exists(path)) return;
-            _hashes[path] = Hash(File.ReadAllBytes(path));
-            _alerted.Remove(path);
-            SaveManifest();
         }
     }
 

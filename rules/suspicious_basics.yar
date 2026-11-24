@@ -8,7 +8,8 @@ rule Ransomware_Note
         $b = "ransom" nocase
         $c = "bitcoin" nocase
     condition:
-        any of them
+        // Dos indicios evitan que la palabra suelta "ransom" dispare una alerta alta.
+        2 of them
 }
 
 rule Mimikatz_Indicators
@@ -21,7 +22,9 @@ rule Mimikatz_Indicators
         $b = "logonpasswords" nocase
         $c = { 4D 69 6D 69 6B 61 74 7A }
     condition:
-        any of them
+        // "sekurlsa" aislado aparece en informes y documentación: exigir
+        // las tres señales evita un falso positivo crítico.
+        all of them
 }
 
 rule Encoded_PowerShell

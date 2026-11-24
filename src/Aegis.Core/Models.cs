@@ -79,6 +79,7 @@ public sealed class LocalAssessment
     public int EvidenceCount { get; set; }
     public List<ScoreContribution> Contributions { get; set; } = [];
     public bool HasCriticalIndicator { get; set; }
+    public bool HasVerifiedIndicator { get; set; }
 }
 
 public sealed class ScoreContribution

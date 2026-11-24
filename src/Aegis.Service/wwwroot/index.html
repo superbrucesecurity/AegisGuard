@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <title>AEGIS Guard · Protección integral</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230ea5e9' d='M12 2 20 5v6c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5l8-3Z'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 20 5v6c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5l8-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></symbol>
+    <symbol id="i-firewall" viewBox="0 0 24 24"><path d="M12 3 4 6v5c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-3Z"/><path d="M12 7v6M9 10h6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 9v5M12 17h.01"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3v-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.4 7 7.2 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3h4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4h-.2a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.7M12 17h.01"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark"><svg><use href="#i-shield"/></svg></span>
+        <span class="brand-text"><strong>AEGIS</strong><small>NEXT-GEN SECURITY</small></span>
+      </div>
+      <nav class="nav" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="dashboard" aria-current="page"><svg><use href="#i-grid"/></svg><span>Resumen</span></button>
+        <button class="nav-item" data-view="analysis"><svg><use href="#i-scan"/></svg><span>Análisis</span></button>
+        <button class="nav-item" data-view="firewall"><svg><use href="#i-firewall"/></svg><span>Firewall</span></button>
+        <button class="nav-item" data-view="threats"><svg><use href="#i-alert"/></svg><span>Amenazas</span><span class="badge" id="navThreatCount">0</span></button>
+        <button class="nav-item" data-view="quarantine"><svg><use href="#i-lock"/></svg><span>Cuarentena</span></button>
+        <button class="nav-item" data-view="history"><svg><use href="#i-history"/></svg><span>Historial</span></button>
+        <button class="nav-item" data-view="settings"><svg><use href="#i-settings"/></svg><span>Configuración</span></button>
+        <button class="nav-item" data-view="help"><svg><use href="#i-help"/></svg><span>Ayuda</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="engine-dot"><span class="dot" id="engineDot"></span><span id="engineText">Conectando…</span></div>
+        <small>v1.0.0 · motor local</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Centro de mando</p>
+          <h1 id="viewTitle">Resumen de protección</h1>
+        </div>
+        <div class="top-actions">
+          <button class="icon-btn" id="themeToggle" aria-label="Cambiar tema" title="Cambiar tema"><svg><use href="#i-moon"/></svg></button>
+          <button class="icon-btn" id="notificationBtn" aria-label="Notificaciones" title="Notificaciones"><svg><use href="#i-bell"/></svg><span class="notif-dot" id="notifDot" hidden></span></button>
+          <div class="avatar" aria-hidden="true">AG</div>
+        </div>
+      </header>
+
+      <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+
+      <section class="view active" id="view-dashboard">
+        <div class="hero-grid">
+          <article class="card hero">
+            <div class="hero-copy">
+              <span class="eyebrow">Estado del sistema</span>
+              <h2 id="heroTitle">Iniciando motor…</h2>
+              <p id="heroDescription">Comprobando monitorización, firewall y clasificador en la nube.</p>
+              <div class="hero-tags" id="heroTags"></div>
+              <div class="hero-actions">
+                <button class="btn primary" data-go="analysis">Analizar un archivo <svg><use href="#i-arrow"/></svg></button>
+                <button class="btn ghost" id="testAiBtn">Probar IA</button>
+              </div>
+            </div>
+            <div class="shield-visual" aria-hidden="true">
+              <svg viewBox="0 0 200 200" class="shield-svg">
+                <circle cx="100" cy="100" r="82" class="ring-bg"/>
+                <circle cx="100" cy="100" r="82" class="ring-progress" id="riskRing" transform="rotate(-90 100 100)"/>
+                <path d="M100 42 142 58v34c0 27-18 45-42 55-24-10-42-28-42-55V58l42-16Z" class="shield-fill"/>
+                <path d="m86 100 10 10 20-22" class="shield-check"/>
+              </svg>
+              <span class="shield-label" id="shieldLabel">—</span>
+            </div>
+          </article>
+
+          <div class="kpi-grid" id="kpiGrid">
+            <article class="card kpi"><span>Eventos analizados</span><strong id="kpiEvents">—</strong><small>monitorización en tiempo real</small></article>
+            <article class="card kpi"><span>Amenazas detectadas</span><strong id="kpiThreats">—</strong><small>con evidencia local</small></article>
+            <article class="card kpi"><span>Bloqueos de red</span><strong id="kpiBlocks">—</strong><small>reglas WFP creadas</small></article>
+            <article class="card kpi"><span>Huella en reposo</span><strong id="kpiResources">—</strong><small>CPU / RAM del servicio</small></article>
+          </div>
+        </div>
+
+        <div class="content-grid">
+          <article class="card chart-card">
+            <div class="card-head"><div><span class="eyebrow">Últimos 40 eventos</span><h3>Riesgo en tiempo real</h3></div><span class="legend"><i></i> riesgo calculado</span></div>
+            <div class="chart-wrap"><canvas id="riskChart" aria-label="Gráfico de riesgo"></canvas><p class="empty-chart" id="emptyChart">Aún no hay eventos con riesgo. El gráfico se llenará automáticamente.</p></div>
+          </article>
+          <article class="card wizard-card">
+            <div class="card-head"><div><span class="eyebrow">Asistente guiado</span><h3>Primeros pasos</h3></div></div>
+            <ol class="wizard" id="wizardList"></ol>
+          </article>
+        </div>
+
+        <article class="card table-card">
+          <div class="card-head"><div><span class="eyebrow">Actividad en directo</span><h3>Eventos recientes</h3></div><button class="btn tiny" data-go="history">Ver historial <svg><use href="#i-arrow"/></svg></button></div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>Hora</th><th>Tipo</th><th>Origen</th><th>Detalle</th><th>Estado</th></tr></thead><tbody id="recentBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-analysis">
+        <div class="page-intro"><span class="eyebrow">Análisis bajo demanda</span><h2>Inspecciona un archivo</h2><p>Se calcula el hash, se comprueba la firma, se aplican reglas locales y, solo si hay indicios, se consulta al clasificador en la nube.</p></div>
+        <article class="card form-card">
+          <label for="scanPath">Ruta completa del archivo</label>
+          <div class="inline-form"><input id="scanPath" type="text" placeholder="C:\Users\...\archivo.exe" autocomplete="off" /><button class="btn primary" id="scanBtn">Analizar ahora</button></div>
+          <p class="hint">Prueba segura: genera el fichero de prueba EICAR desde Ayuda y analízalo aquí.</p>
+        </article>
+        <article class="card result-card" id="scanResult" hidden>
+          <div class="card-head"><div><span class="eyebrow">Resultado del análisis</span><h3 id="scanVerdict">—</h3></div><span class="severity-pill" id="scanSeverity">—</span></div>
+          <div class="score-layout">
+            <div class="score-block"><span>Riesgo total</span><strong id="scanRisk">—</strong><div class="meter"><i id="scanRiskBar"></i></div></div>
+            <div class="score-block"><span>Confianza</span><strong id="scanConfidence">—</strong><div class="meter"><i id="scanConfidenceBar"></i></div></div>
+            <div class="score-block"><span>IA</span><strong id="scanAi">—</strong><small id="scanAiDetail">—</small></div>
+          </div>
+          <div class="evidence"><h4>Motivos de la decisión</h4><ul id="scanReasons"></ul></div>
+          <dl class="meta-list" id="scanMeta"></dl>
+        </article>
+      </section>
+
+      <section class="view" id="view-firewall">
+        <div class="page-intro"><span class="eyebrow">Control de red</span><h2>Firewall inteligente</h2><p>Las reglas se crean en el firewall de Windows (WFP). El modo aprendizaje observa conexiones sin bloquearlas.</p></div>
+        <div class="two-col">
+          <article class="card form-card">
+            <h3>Crear regla de bloqueo</h3>
+            <label for="fwApp">Aplicación (opcional)</label><input id="fwApp" type="text" placeholder="C:\ruta\app.exe" />
+            <label for="fwIp">IP o rango remoto (opcional)</label><input id="fwIp" type="text" placeholder="203.0.113.10" />
+            <div class="form-row"><label>Puerto remoto<input id="fwPort" type="number" min="1" max="65535" placeholder="443" /></label><label>Protocolo<select id="fwProtocol"><option value="256">Cualquiera</option><option value="6">TCP</option><option value="17">UDP</option></select></label></div>
+            <button class="btn primary full" id="addRuleBtn">Añadir regla</button>
+          </article>
+          <article class="card">
+            <div class="card-head"><div><span class="eyebrow">Perfil aprendido</span><h3>Conexiones observadas</h3></div></div>
+            <div class="table-scroll short"><table class="data-table"><thead><tr><th>Endpoint</th><th>Observaciones</th></tr></thead><tbody id="learnedBody"></tbody></table></div>
+          </article>
+        </div>
+        <article class="card table-card">
+          <div class="card-head"><div><span class="eyebrow">Reglas activas</span><h3>Reglas AEGIS en WFP</h3></div><button class="btn tiny" id="refreshRules">Actualizar</button></div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>Nombre</th><th>Acciones</th></tr></thead><tbody id="rulesBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-threats">
+        <div class="page-intro"><span class="eyebrow">Centro de amenazas</span><h2>Amenazas detectadas</h2><p>Cada entrada incluye la evidencia local, la probabilidad de IA y la acción aplicada.</p></div>
+        <article class="card table-card">
+          <div class="card-head"><div><span class="eyebrow">Detectadas</span><h3>Hallazgos recientes</h3></div><select id="threatFilter" aria-label="Filtrar por severidad"><option value="all">Todas</option><option value="Critical">Críticas</option><option value="High">Altas</option><option value="Medium">Medias</option></select></div>
+          <div class="table-scroll tall"><table class="data-table"><thead><tr><th>Hora</th><th>Objeto</th><th>Severidad</th><th>Decisión</th><th>Riesgo</th><th></th></tr></thead><tbody id="threatsBody"></tbody></table></div>
+        </article>
+        <div class="detail-panel card" id="threatDetail" hidden></div>
+      </section>
+
+      <section class="view" id="view-quarantine">
+        <div class="page-intro"><span class="eyebrow">Recuperación segura</span><h2>Cuarentena</h2><p>Los archivos se cifran con AES-GCM y una clave protegida por DPAPI. Puedes restaurarlos o eliminarlos definitivamente.</p></div>
+        <article class="card table-card">
+          <div class="card-head"><div><span class="eyebrow">Elementos retenidos</span><h3>Archivos en cuarentena</h3></div></div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>Fecha</th><th>Ruta original</th><th>Motivo</th><th>Acciones</th></tr></thead><tbody id="quarantineBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-history">
+        <div class="page-intro"><span class="eyebrow">Trazabilidad</span><h2>Historial de actividad</h2><p>Eventos observados por el motor local. La exportación genera un archivo JSON real.</p></div>
+        <article class="card table-card">
+          <div class="card-head"><div><span class="eyebrow">Registro</span><h3>Eventos</h3></div><button class="btn tiny" id="exportBtn"><svg><use href="#i-download"/></svg> Exportar JSON</button></div>
+          <div class="table-scroll tall"><table class="data-table"><thead><tr><th>Hora</th><th>Tipo</th><th>Origen</th><th>Detalle</th><th>Hash</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="page-intro"><span class="eyebrow">Políticas verificables</span><h2>Configuración</h2><p>Los cambios se guardan en la configuración protegida del servicio y se aplican de inmediato.</p></div>
+        <article class="card form-card">
+          <h3>Comportamiento</h3>
+          <label class="switch-row"><span><strong>Clasificador IA en la nube</strong><small>Envía solo metadatos; nunca el contenido del archivo.</small></span><input type="checkbox" id="setAi" /></label>
+          <label class="switch-row"><span><strong>Modo aprendizaje</strong><small>Observa conexiones nuevas sin bloquearlas.</small></span><input type="checkbox" id="setLearning" /></label>
+          <label class="switch-row"><span><strong>Cuarentena automática</strong><small>Aísla archivos con evidencia crítica y reversible.</small></span><input type="checkbox" id="setQuarantine" /></label>
+          <label class="switch-row"><span><strong>Bloqueo de red automático</strong><small>Crea reglas WFP ante conexiones maliciosas confirmadas.</small></span><input type="checkbox" id="setBlock" /></label>
+          <h3>Umbrales de decisión</h3>
+          <label class="range-row"><span>Monitorizar <output id="outMonitor"></output></span><input type="range" id="setMonitor" min="5" max="70" /></label>
+          <label class="range-row"><span>Bloquear <output id="outBlock"></output></span><input type="range" id="setBlockThreshold" min="20" max="95" /></label>
+          <label class="range-row"><span>Cuarentena <output id="outQuarantine"></output></span><input type="range" id="setQuarantineThreshold" min="40" max="100" /></label>
+          <label class="range-row"><span>Peso de la IA <output id="outAiWeight"></output></span><input type="range" id="setAiWeight" min="0" max="50" /></label>
+          <button class="btn primary" id="saveSettings">Guardar cambios</button>
+        </article>
+      </section>
+
+      <section class="view" id="view-help">
+        <div class="page-intro"><span class="eyebrow">Ayuda rápida</span><h2>Entender AEGIS Guard</h2><p>Explicaciones sencillas para sacar el máximo partido sin conocimientos técnicos.</p></div>
+        <div class="help-grid">
+          <article class="card help-card"><span class="help-num">01</span><h3>¿Qué está protegido?</h3><p>Procesos, archivos en carpetas de usuario, conexiones de red, consultas DNS, claves de persistencia y archivos señuelo anti-ransomware.</p></article>
+          <article class="card help-card"><span class="help-num">02</span><h3>Probar la detección</h3><p>Crea un archivo de texto con el contenido EICAR estándar y analízalo desde Análisis. Es una prueba inofensiva reconocida por la industria.</p><button class="btn tiny" id="copyEicar">Copiar contenido EICAR</button></article>
+          <article class="card help-card"><span class="help-num">03</span><h3>Qué hace la IA</h3><p>Clasifica metadatos en CLEAN, SUSPICIOUS o MALICIOUS. Nunca decide sola un bloqueo: siempre se combina con evidencia local verificable.</p></article>
+          <article class="card help-card"><span class="help-num">04</span><h3>Límites honestos</h3><p>Ningún antivirus ofrece protección absoluta. Esta versión cubre el flujo esencial; las firmas y reglas deben mantenerse actualizadas.</p></article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

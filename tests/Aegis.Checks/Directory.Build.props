@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Evita que el antivirus del equipo bloquee rutas de compilación ya utilizadas. -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\checks10\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\checks10\obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

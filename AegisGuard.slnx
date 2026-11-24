@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Aegis.CloudGateway/Aegis.CloudGateway.csproj" />
+    <Project Path="src/Aegis.Core/Aegis.Core.csproj" />
+    <Project Path="src/Aegis.Service/Aegis.Service.csproj" />
+    <Project Path="src/Aegis.UI/Aegis.UI.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Aegis.Checks/Aegis.Checks.csproj" />
+  </Folder>
+</Solution>

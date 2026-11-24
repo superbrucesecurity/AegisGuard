@@ -1,0 +1,40 @@
+## Build / .NET
+bin/
+obj/
+artifacts/
+*.user
+*.suo
+*.userprefs
+.vs/
+.idea/
+*.dll
+*.exe
+*.pdb
+*.cache
+*.nupkg
+project.assets.json
+*.deps.json
+*.runtimeconfig.json
+
+## Secretos y estado local (nunca versionar)
+gateway.env
+ui-token
+config.json
+*.pfx
+*.key
+*.pem
+*.snk
+
+## Datos de ejecución
+events.jsonl
+threats.jsonl
+quarantine/
+ProgramData/
+InstallDir/
+
+## Temporal / SO
+*.log
+*.tmp
+Thumbs.db
+desktop.ini
+.DS_Store

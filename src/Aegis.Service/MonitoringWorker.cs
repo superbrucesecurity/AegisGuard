@@ -14,12 +14,12 @@ public sealed class MonitoringWorker : BackgroundService
     private readonly RuntimeState _state;
     private readonly RansomwareCanary _canary;
     private readonly ILogger<MonitoringWorker> _logger;
-    private readonly Channel<Observation> _channel = Channel.CreateBounded<Observation>(new BoundedChannelOptions(2000)
-    {
-        FullMode = BoundedChannelFullMode.DropOldest,
-        SingleReader = true
-    });
+    private readonly PriorityObservationQueue _queue = new();
     private readonly List<FileSystemWatcher> _watchers = [];
+    private readonly List<string> _watcherDirectories = [];
+    private readonly object _watchersGate = new();
+    private int _queueAlertSent;
+    private CancellationToken _stoppingToken;
     private readonly EventDeduplicator _debounce = new();
     private readonly EventDeduplicator _networkDebounce = new();
     private TraceEventSession? _session;
@@ -43,6 +43,7 @@ public sealed class MonitoringWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _stoppingToken = stoppingToken;
         _processorTask = Task.Run(() => ProcessQueueAsync(stoppingToken), stoppingToken);
         if (_canary.ManifestTampered)
         {
@@ -60,17 +61,18 @@ public sealed class MonitoringWorker : BackgroundService
         // El respaldo arranca solo si ETW no está disponible o se detiene.
         var fallback = StartProcessSnapshotAsync(stoppingToken);
         var canaryLoop = StartCanaryLoopAsync(stoppingToken);
+        var queueMonitor = StartQueueMonitorAsync(stoppingToken);
 
         _state.MonitorActive = true;
         _logger.LogInformation("Aegis Guard monitorización activa. ETW={Etw}, watchers={Watchers}", _etwActive, _watchers.Count);
 
-        await Task.WhenAll(_processorTask, fallback, canaryLoop, _etwTask ?? Task.CompletedTask).ConfigureAwait(false);
+        await Task.WhenAll(_processorTask, fallback, canaryLoop, queueMonitor, _etwTask ?? Task.CompletedTask).ConfigureAwait(false);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _state.MonitorActive = false;
-        _channel.Writer.TryComplete();
+        _queue.Complete();
         _etwLost.TrySetResult();
         // Drenar la cola antes de cerrar para no perder cuarentenas recientes.
         if (_processorTask is not null)
@@ -78,22 +80,52 @@ public sealed class MonitoringWorker : BackgroundService
             try { await _processorTask.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogDebug(ex, "No se pudo drenar completamente la cola"); }
         }
-        foreach (var watcher in _watchers)
+        lock (_watchersGate)
         {
-            watcher.EnableRaisingEvents = false;
-            watcher.Dispose();
+            foreach (var watcher in _watchers)
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
+            _watchers.Clear();
         }
-        _watchers.Clear();
         _session?.Dispose();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ProcessQueueAsync(CancellationToken ct)
     {
-        await foreach (var observation in _channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        await foreach (var observation in _queue.ReadAllAsync(ct).ConfigureAwait(false))
         {
             try { await _pipeline.ProcessAsync(observation, ct).ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Error procesando observación {Id}", observation.Id); }
+        }
+    }
+
+    /// <summary>
+    /// Publica en el estado real la profundidad, antigüedad y descartes de las
+    /// colas. Si se pierde visibilidad se genera una única alerta crítica.
+    /// </summary>
+    private async Task StartQueueMonitorAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+        {
+            _state.CriticalQueueDepth = _queue.CriticalDepth;
+            _state.NormalQueueDepth = _queue.NormalDepth;
+            _state.OldestQueuedSeconds = _queue.OldestQueuedSeconds;
+            _state.QueueSaturated = _queue.Saturated;
+            if (_queue.Dropped > 0 && Interlocked.Exchange(ref _queueAlertSent, 1) == 0)
+            {
+                _logger.LogWarning("Pérdida de visibilidad: {Dropped} eventos descartados por saturación", _queue.Dropped);
+                _queue.TryEnqueue(new Observation
+                {
+                    Kind = EventKind.PersistenceChanged,
+                    Subject = "aegis://monitor/queue",
+                    BehaviorFlags = ["sensor_queue_saturated"],
+                    Source = "queue-monitor"
+                });
+            }
         }
     }
 
@@ -141,7 +173,7 @@ public sealed class MonitoringWorker : BackgroundService
             {
                 var image = GetString(data, "ImageName", "ImageFileName", "FileName");
                 if (string.IsNullOrWhiteSpace(image)) return;
-                Enqueue(new Observation
+                var processObservation = new Observation
                 {
                     Kind = EventKind.ProcessStarted,
                     Subject = image,
@@ -150,7 +182,12 @@ public sealed class MonitoringWorker : BackgroundService
                     // a imagen permite que unusual_parent funcione con telemetría real.
                     ParentProcess = ResolveParent(GetString(data, "ParentID", "ParentId", "ppid")),
                     Source = "etw-process"
-                });
+                };
+                // La marca de tiempo del evento se conserva para que el motor
+                // pueda detectar reutilización de PID antes de analizar la imagen.
+                processObservation.Metadata["processCreateTimeUtc"] =
+                    data.TimeStamp.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+                Enqueue(processObservation);
                 return;
             }
 
@@ -220,28 +257,99 @@ public sealed class MonitoringWorker : BackgroundService
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             Path.Combine(profile, "Downloads"),
             Path.GetTempPath()
-        }.Where(d => !string.IsNullOrWhiteSpace(d) && Directory.Exists(d)).Distinct(StringComparer.OrdinalIgnoreCase);
+        }.Where(d => !string.IsNullOrWhiteSpace(d) && Directory.Exists(d))
+         .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        foreach (var dir in dirs)
+        lock (_watchersGate)
+        {
+            _watcherDirectories.Clear();
+            _watcherDirectories.AddRange(dirs);
+        }
+        foreach (var dir in dirs) CreateWatcher(dir);
+        UpdateWatcherState();
+    }
+
+    private void CreateWatcher(string dir)
+    {
+        lock (_watchersGate)
+        {
+            foreach (var old in _watchers.Where(w => string.Equals(w.Path, dir, StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                old.EnableRaisingEvents = false;
+                old.Dispose();
+                _watchers.Remove(old);
+            }
+        }
+        try
+        {
+            var watcher = new FileSystemWatcher(dir)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                InternalBufferSize = 256 * 1024
+            };
+            watcher.Created += OnFileEvent;
+            watcher.Changed += OnFileEvent;
+            watcher.Deleted += OnFileEvent;
+            watcher.Renamed += OnFileRenamed;
+            watcher.Error += (_, e) => OnWatcherError(dir, e);
+            watcher.EnableRaisingEvents = true;
+            lock (_watchersGate) _watchers.Add(watcher);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo vigilar {Dir}", dir);
+            UpdateWatcherState();
+        }
+    }
+
+    private void OnWatcherError(string dir, ErrorEventArgs e)
+    {
+        // Un desbordamiento del buffer es una pérdida real de eventos: se marca
+        // degradación, se descarta el watcher y se recrea tras un breve espera.
+        _logger.LogWarning(e.GetException(), "Pérdida de eventos en FileSystemWatcher de {Dir}; se recrea", dir);
+        Interlocked.Add(ref _state.DroppedEvents, 1);
+        lock (_watchersGate)
+        {
+            foreach (var watcher in _watchers.Where(w => string.Equals(w.Path, dir, StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+                _watchers.Remove(watcher);
+            }
+        }
+        UpdateWatcherState();
+        _ = Task.Run(async () =>
         {
             try
             {
-                var watcher = new FileSystemWatcher(dir)
-                {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-                    InternalBufferSize = 64 * 1024
-                };
-                watcher.Created += OnFileEvent;
-                watcher.Changed += OnFileEvent;
-                watcher.Deleted += OnFileEvent;
-                watcher.Renamed += (_, e) => OnFileEvent(this, new FileSystemEventArgs(WatcherChangeTypes.Created, Path.GetDirectoryName(e.FullPath) ?? string.Empty, e.Name ?? string.Empty));
-                watcher.Error += (_, e) => _logger.LogDebug(e.GetException(), "Error en FileSystemWatcher");
-                watcher.EnableRaisingEvents = true;
-                _watchers.Add(watcher);
+                await Task.Delay(TimeSpan.FromSeconds(2), _stoppingToken).ConfigureAwait(false);
+                CreateWatcher(dir);
+                UpdateWatcherState();
             }
-            catch (Exception ex) { _logger.LogWarning(ex, "No se pudo vigilar {Dir}", dir); }
-        }
+            catch (OperationCanceledException) { /* apagado ordenado */ }
+        }, _stoppingToken);
+    }
+
+    private void UpdateWatcherState()
+    {
+        lock (_watchersGate)
+            _state.WatchersDegraded = _watchers.Count < _watcherDirectories.Count;
+    }
+
+    private void OnFileRenamed(object sender, RenamedEventArgs e)
+    {
+        if (!IsInterestingFile(e.FullPath)) return;
+        if (_debounce.IsDuplicate(e.FullPath, 1500)) return;
+        var observation = new Observation
+        {
+            Kind = EventKind.FileModified,
+            Subject = e.FullPath,
+            BehaviorFlags = ["file_renamed"],
+            Source = "filesystem"
+        };
+        observation.Metadata["oldPath"] = e.OldFullPath;
+        Enqueue(observation);
     }
 
     private void OnFileEvent(object sender, FileSystemEventArgs e)
@@ -309,14 +417,17 @@ public sealed class MonitoringWorker : BackgroundService
                     if (p is null) continue;
                     try
                     {
-                        Enqueue(new Observation
+                        var snapshot = new Observation
                         {
                             Kind = EventKind.ProcessStarted,
                             Subject = p.MainModule?.FileName ?? p.ProcessName,
                             ProcessId = id.ToString(CultureInfo.InvariantCulture),
                             ParentProcess = "unknown",
                             Source = "process-snapshot"
-                        });
+                        };
+                        try { snapshot.Metadata["processCreateTimeUtc"] = p.StartTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture); }
+                        catch { /* proceso terminado durante la lectura */ }
+                        Enqueue(snapshot);
                     }
                     catch { /* proceso protegido */ }
                 }
@@ -357,10 +468,11 @@ public sealed class MonitoringWorker : BackgroundService
 
     private void Enqueue(Observation observation)
     {
-        // Contar solo lo que entró realmente en el canal: DropOldest descarta
-        // eventos bajo ráfaga y el KPI debe reflejarlo.
-        if (_channel.Writer.TryWrite(observation)) Interlocked.Increment(ref _state.EventsTotal);
+        // Contar solo lo que entró realmente en la cola. Los duplicados
+        // coalescionados se contabilizan aparte y no se presentan como eventos.
+        if (_queue.TryEnqueue(observation)) Interlocked.Increment(ref _state.EventsTotal);
         else Interlocked.Increment(ref _state.DroppedEvents);
+        _state.CoalescedEvents = _queue.Coalesced;
     }
 
     private static string? ResolveParent(string? parent)

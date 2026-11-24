@@ -13,8 +13,15 @@ public sealed class RuntimeState
     public long EventsTotal;
     public long ThreatsTotal;
     public long QuarantinedTotal;
+    public long BlockedTotal;
     public long BlockedNetworkTotal;
     public long DroppedEvents;
+    public long CoalescedEvents;
+    public bool WatchersDegraded;
+    public bool QueueSaturated;
+    public int CriticalQueueDepth;
+    public int NormalQueueDepth;
+    public double OldestQueuedSeconds;
     public readonly List<double> RiskTrend = [];
 
     public void UpdatePolicy(PolicySettings policy)
@@ -40,7 +47,8 @@ public sealed class RuntimeState
     public void Record(DecisionResult decision)
     {
         if (decision.Verdict != Verdict.Allow) Interlocked.Increment(ref ThreatsTotal);
-        if (decision.Verdict is Verdict.Quarantine or Verdict.Block) Interlocked.Increment(ref QuarantinedTotal);
+        if (decision.Verdict == Verdict.Quarantine) Interlocked.Increment(ref QuarantinedTotal);
+        else if (decision.Verdict == Verdict.Block) Interlocked.Increment(ref BlockedTotal);
         lock (_gate)
         {
             RiskTrend.Add(decision.Risk);
@@ -65,7 +73,11 @@ public sealed class RuntimeState
         lock (_gate) trend = [.. RiskTrend];
 
         string state;
-        if (!MonitorActive || !EtwActive) state = "degraded";
+        // Nunca informar de protección completa si se descartan eventos, hay
+        // sensores caídos o la antigüedad de la cola indica pérdida de visibilidad.
+        var dropped = Interlocked.Read(ref DroppedEvents);
+        if (!MonitorActive || !EtwActive || dropped > 0 || WatchersDegraded || QueueSaturated ||
+            OldestQueuedSeconds > 30) state = "degraded";
         else if (!firewallActive) state = "limited";
         else if (policy.LearningMode) state = "learning";
         else state = "protected";
@@ -83,8 +95,13 @@ public sealed class RuntimeState
             EventsTotal = Interlocked.Read(ref EventsTotal),
             ThreatsTotal = Interlocked.Read(ref ThreatsTotal),
             QuarantinedTotal = Interlocked.Read(ref QuarantinedTotal),
+            BlockedTotal = Interlocked.Read(ref BlockedTotal),
             BlockedNetworkTotal = Interlocked.Read(ref BlockedNetworkTotal),
-            DroppedEvents = Interlocked.Read(ref DroppedEvents),
+            DroppedEvents = dropped,
+            CoalescedEvents = Interlocked.Read(ref CoalescedEvents),
+            CriticalQueueDepth = CriticalQueueDepth,
+            NormalQueueDepth = NormalQueueDepth,
+            OldestQueuedSeconds = Math.Round(OldestQueuedSeconds, 1),
             RiskTrend = trend,
             Policy = policy
         };

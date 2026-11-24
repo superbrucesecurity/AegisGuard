@@ -7,7 +7,7 @@ public sealed class EventStore
 {
     private readonly string _observationsPath;
     private readonly string _threatsPath;
-    private readonly int _maxMemory;
+    private int _maxMemory;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<Observation> _observations = [];
     private readonly List<ThreatRecord> _threats = [];
@@ -17,6 +17,20 @@ public sealed class EventStore
         _observationsPath = Path.Combine(root, "events.jsonl");
         _threatsPath = Path.Combine(root, "threats.jsonl");
         _maxMemory = maxMemory;
+    }
+
+    /// <summary>Actualiza el tope en memoria sin reiniciar el servicio.</summary>
+    public void SetMaxEvents(int maxEvents)
+    {
+        if (maxEvents < 1) throw new ArgumentOutOfRangeException(nameof(maxEvents));
+        lock (_gate)
+        {
+            _maxMemory = maxEvents;
+            if (_observations.Count > _maxMemory)
+                _observations.RemoveRange(0, _observations.Count - _maxMemory);
+            if (_threats.Count > _maxMemory)
+                _threats.RemoveRange(0, _threats.Count - _maxMemory);
+        }
     }
 
     public async Task InitializeAsync()

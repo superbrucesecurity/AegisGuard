@@ -21,10 +21,10 @@ No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El
 
 ## Flujo de una observación
 
-1. **Captura**: ETW de procesos/red/registro/DNS, watchers de archivos y canarios anti-ransomware. Se deduplica por ruta+kind y se encola con `Channel` acotado.
-2. **Enriquecimiento**: hash SHA-256, tamaño, firma WinTrust, coincidencia EICAR, reglas YARA-lite, reputación y listas locales.
+1. **Captura**: ETW de procesos/red/registro/DNS, watchers de archivos y canarios anti-ransomware. `PriorityObservationQueue` deduplica por kind+ruta+PID+destino, aplica coalescencia, prioriza alertas críticas y contabiliza descartes; un watcher en error se marca degradado y se recrea.
+2. **Enriquecimiento**: hash SHA-256, tamaño, firma WinTrust, coincidencia EICAR (incluso partida entre lecturas), reglas YARA-lite, reputación y listas locales. `ProcessStarted` analiza la imagen y conserva PID + tiempo de creación para detectar reutilización antes de atribuir evidencia.
 3. **Decisión local**: `LocalAssessment` produce score, evidencias y criticalidad. La reputación se lee del historial de la sesión y se actualiza tras la decisión. `DecisionEngine` calcula riesgo, confianza, severidad y veredicto con `risk = local.Score`.
-4. **Remediación**: cuarentena reversible solo para rutas seguras; bloqueo WFP solo con veredicto `Block`/`Quarantine`; modo aprendizaje registra conexiones sin bloquear.
+4. **Remediación**: la regla WFP por aplicación se resuelve antes de mover el archivo; cuarentena reversible solo para rutas seguras; bloqueo WFP solo con veredicto `Block`/`Quarantine`; modo aprendizaje registra conexiones sin bloquear. `Block` y `Quarantine` se contabilizan por separado.
 5. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl` bajo `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`). Las reglas se leen de `%AEGIS_RULES_DIR%` (por defecto el directorio `rules` del servicio).
 
 El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el resultado. La prueba EICAR (`POST /api/selftest/eicar`) reutiliza el enriquecimiento y la decisión, pero no escribe eventos ni aplica remediación: crea una muestra en `%AEGIS_DATA_DIR%\selftest`, la analiza y la elimina. Si otro producto retira el archivo, se informa del bloqueo externo en lugar de fingir un resultado.

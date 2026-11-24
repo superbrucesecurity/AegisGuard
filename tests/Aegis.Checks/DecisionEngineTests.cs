@@ -126,6 +126,23 @@ public sealed class DecisionEngineTests
     }
 
     [Fact]
+    public void UnverifiableChainIsNotTreatedAsMalware()
+    {
+        var observation = new Observation
+        {
+            Kind = EventKind.ProcessStarted,
+            Subject = @"C:\Program Files\App\app.exe",
+            FileExtension = ".exe",
+            Signature = SignatureStatus.ChainNotVerifiable
+        };
+        var local = _engine.Assess(observation, [], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        Assert.True(local.Score > 0);
+        Assert.False(local.HasCriticalIndicator);
+        Assert.False(local.HasVerifiedIndicator);
+    }
+
+    [Fact]
     public void KnownHashSetsVerifiedIndicator()
     {
         const string hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";

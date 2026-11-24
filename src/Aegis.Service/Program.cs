@@ -45,7 +45,8 @@ state.UpdatePolicy(config.Policy);
 // Los KPI deben reflejar el historial cargado, no solo la sesión actual.
 state.EventsTotal = store.Observations.Count;
 state.ThreatsTotal = store.Threats.Count(x => x.Decision.Verdict != Verdict.Allow);
-state.QuarantinedTotal = store.Threats.Count(x => x.Decision.Verdict is Verdict.Quarantine or Verdict.Block);
+state.QuarantinedTotal = store.Threats.Count(x => x.Decision.Verdict == Verdict.Quarantine);
+state.BlockedTotal = store.Threats.Count(x => x.Decision.Verdict == Verdict.Block);
 
 app.Use(async (context, next) =>
 {
@@ -65,8 +66,7 @@ app.Use(async (context, next) =>
             context.Response.StatusCode = 403;
             return;
         }
-        var expected = "Bearer " + tokens.Token;
-        if (!string.Equals(context.Request.Headers.Authorization.ToString(), expected, StringComparison.Ordinal))
+        if (!tokens.Matches(context.Request.Headers.Authorization.ToString()))
         {
             context.Response.StatusCode = 401;
             return;
@@ -87,7 +87,7 @@ app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
 app.MapGet("/api/health", () => Results.Ok(new
 {
     ok = true,
-    version = typeof(ScanRequest).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"
+    version = typeof(ScanRequest).Assembly.GetName().Version?.ToString(3) ?? "3.0.0"
 }));
 
 app.MapGet("/api/status", () => Results.Json(state.Snapshot(firewall.IsAvailable()), JsonDefaults.Options));
@@ -196,6 +196,9 @@ app.MapPut("/api/settings", (PolicySettings policy) =>
     // Persistir primero evita que la UI muestre valores rechazados por Validate.
     config.SavePolicy(policy);
     state.UpdatePolicy(config.Policy);
+    // Aplicar el límite en caliente: la UI no debe exigir reiniciar el servicio
+    // para reducir o ampliar el historial en memoria.
+    store.SetMaxEvents(policy.MaxEvents);
     return Results.Ok(state.GetPolicy());
 });
 

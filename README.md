@@ -21,7 +21,18 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 64 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 90 casos | `tests/Aegis.Checks`. |
+
+### `dev/v3.0` · Fase 1 — correcciones críticas verificadas
+
+- **WinTrust:** ciclo completo `WTD_STATEACTION_VERIFY=1` / `WTD_STATEACTION_CLOSE=2`, liberación nativa y mapeo verificable de estados. La cadena no comprobable sin caché de revocación se clasifica como `ChainNotVerifiable` y nunca como malware.
+- **Canarios:** clave HMAC aleatoria persistente protegida con DPAPI, manifiesto versionado y firmado, anti-rollback, conservación de evidencia inválida y rotación de clave sin perder baselines.
+- **Colas:** prioridad para alertas críticas, coalescencia corregida (el primer evento ya no se descarta), contadores reales de descarte y alerta de pérdida de visibilidad. Los descartes degradan el estado mostrado.
+- **Token local:** formato validado, recuperación atómica si está corrupto, conservación del archivo inválido y comparación en tiempo constante. La UI recarga una sola vez si el token cambia.
+- **Pipeline:** `ProcessStarted` se enriquece con hash/firma/reglas de la imagen y comprueba PID + tiempo de creación; la regla WFP por aplicación se crea antes de mover el archivo a cuarentena.
+- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.0.0`).
+
+Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo user-mode y no sustituye un driver firmado.
 
 **Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición real de 20 s en reposo (24 núcleos lógicos, monitorización y WFP activos) el servicio registró 79,9 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 82,0 MB y 2 %. El método y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet.
 
@@ -66,7 +77,7 @@ dotnet run --project src/Aegis.UI/Aegis.UI.csproj
 
 Puesto: servicio local en `http://127.0.0.1:8787`.
 
-La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se genera en `%AEGIS_DATA_DIR%\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. No es efímero: vive hasta el siguiente arranque del servicio.
+La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se guarda en `%AEGIS_DATA_DIR%\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. Persiste entre arranques y solo se regenera si falta o está corrupto; en ese caso el archivo inválido se conserva como `ui-token.invalid-*` y la UI se recarga una vez para tomar la nueva credencial.
 
 ## API local
 

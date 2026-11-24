@@ -8,22 +8,29 @@ namespace Aegis.Service;
 /// <summary>
 /// Archivos señuelo ocultos en directorios de usuario. Un cambio (o borrado)
 /// en su contenido es un indicador fuerte de cifrado masivo/ransomware.
-/// El baseline se persiste para detectar alteraciones mientras el servicio está apagado.
+/// El baseline se persiste con HMAC cuya clave aleatoria se protege con DPAPI
+/// y se reutiliza entre arranques; un manifiesto inválido nunca se acepta como
+/// baseline fiable.
 /// </summary>
-public sealed class RansomwareCanary
+public sealed class RansomwareCanary : IDisposable
 {
     private const int ManifestVersion = 2;
-    private const string KeyLabel = "AegisGuard.Canary.v1";
+    private const int KeyVersion = 1;
+    private const string KeyLabel = "AegisGuard.Canary.Key.v1";
     private readonly Dictionary<string, string> _hashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _alerted = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _manifestPath;
+    private readonly string _keyPath;
     private readonly IReadOnlyList<string>? _targets;
     private readonly object _gate = new();
+    private byte[]? _key;
     private volatile bool _manifestTampered;
+    private bool _disposed;
 
     public RansomwareCanary(string root, IEnumerable<string>? targets = null)
     {
         _manifestPath = Path.Combine(root, "canaries.json");
+        _keyPath = Path.Combine(root, "canary.key");
         _targets = targets?.ToList();
     }
 
@@ -31,11 +38,15 @@ public sealed class RansomwareCanary
 
     /// <summary>
     /// El manifiesto no coincide con su HMAC local. No implica que un atacante
-    /// haya eludido la protección: solo que la baseline fue editada o corrupta.
+    /// haya eludido la protección: solo que la baseline fue editada, corrupta
+    /// o sustituida por una versión anterior.
     /// </summary>
     public bool ManifestTampered => _manifestTampered;
 
     public string IntegrityStatus { get; private set; } = "new";
+
+    /// <summary>Número de operaciones de ACL que no pudieron aplicarse.</summary>
+    public int AclFailures { get; private set; }
 
     public IReadOnlyList<string> Paths
     {
@@ -47,6 +58,7 @@ public sealed class RansomwareCanary
         Directory.CreateDirectory(Path.GetDirectoryName(_manifestPath)!);
         lock (_gate)
         {
+            LoadKey();
             LoadManifest();
             var targets = (_targets ?? new[]
             {
@@ -64,7 +76,7 @@ public sealed class RansomwareCanary
                     {
                         var content = $"AEGIS Guard canary. Do not modify. {Guid.NewGuid():N}{Environment.NewLine}";
                         File.WriteAllText(name, content, Encoding.UTF8);
-                        LocalFileAcl.Restrict(name);
+                        RestrictOrCount(name);
                         File.SetAttributes(name, FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReadOnly);
                     }
                     // Baseline nuevo: no se crea uno nuevo si ya existía en el
@@ -72,6 +84,21 @@ public sealed class RansomwareCanary
                     _hashes[name] = Hash(File.ReadAllBytes(name));
                 }
             }
+            SaveManifest();
+        }
+    }
+
+    /// <summary>
+    /// Sustituye la clave por una nueva y vuelve a firmar la baseline actual
+    /// sin perder los hashes observados. Útil tras una sospecha de compromiso
+    /// de la clave local o al cambiar la cuenta de ejecución del servicio.
+    /// </summary>
+    public void RotateKey()
+    {
+        lock (_gate)
+        {
+            ReplaceKey(RandomNumberGenerator.GetBytes(32));
+            _manifestTampered = false;
             SaveManifest();
         }
     }
@@ -107,21 +134,90 @@ public sealed class RansomwareCanary
         }
     }
 
+    private void RestrictOrCount(string path)
+    {
+        if (OperatingSystem.IsWindows() && !LocalFileAcl.Restrict(path))
+        {
+            AclFailures++;
+            IntegrityStatus = "acl-failed";
+        }
+    }
+
+    private void LoadKey()
+    {
+        if (_key is not null) return;
+        var keyExisted = File.Exists(_keyPath);
+        if (keyExisted)
+        {
+            try
+            {
+                var blob = File.ReadAllBytes(_keyPath);
+                var plain = OperatingSystem.IsWindows()
+                    ? ProtectedData.Unprotect(blob, Entropy(), DataProtectionScope.CurrentUser)
+                    : blob;
+                if (plain.Length == 32)
+                {
+                    _key = plain;
+                    return;
+                }
+                CryptographicOperations.ZeroMemory(plain);
+            }
+            catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
+            {
+                // Clave corrupta o contexto DPAPI distinto: se genera una nueva
+                // y el manifiesto antiguo se conserva como evidencia.
+            }
+        }
+        // Una clave nueva en una instalación limpia no es manipulación; solo
+        // lo es si existía una clave que no pudimos recuperar.
+        if (keyExisted)
+        {
+            _manifestTampered = true;
+            IntegrityStatus = "invalid";
+        }
+        ReplaceKey(RandomNumberGenerator.GetBytes(32));
+    }
+
+    private void ReplaceKey(byte[] key)
+    {
+        if (_key is not null) CryptographicOperations.ZeroMemory(_key);
+        _key = key;
+        WriteAtomic(_keyPath, OperatingSystem.IsWindows()
+            ? ProtectedData.Protect(key, Entropy(), DataProtectionScope.CurrentUser)
+            : key);
+        RestrictOrCount(_keyPath);
+    }
+
+    private static byte[] Entropy() => Encoding.UTF8.GetBytes(KeyLabel + ".v" + KeyVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     private void LoadManifest()
     {
         if (!File.Exists(_manifestPath)) return;
         try
         {
-            var manifest = JsonSerializer.Deserialize<CanaryManifest>(File.ReadAllText(_manifestPath), JsonDefaults.Options);
-            if (manifest is null) return;
+            var raw = File.ReadAllText(_manifestPath);
+            var manifest = JsonSerializer.Deserialize<CanaryManifest>(raw, JsonDefaults.Options);
+            if (manifest is null) throw new JsonException("Manifiesto vacío");
+
             IntegrityStatus = Verify(manifest) ? "ok" : "invalid";
-            if (IntegrityStatus == "invalid") _manifestTampered = true;
+            if (IntegrityStatus == "invalid")
+            {
+                _manifestTampered = true;
+                // Conservar la baseline original: sobrescribirla destruiría la
+                // evidencia de que fue editada.
+                var preserved = Path.Combine(Path.GetDirectoryName(_manifestPath)!,
+                    $"canaries.invalid-{Guid.NewGuid():N}.json");
+                File.Copy(_manifestPath, preserved, false);
+                _hashes.Clear();
+                _alerted.Clear();
+                return;
+            }
+
             foreach (var (path, hash) in manifest.Hashes) _hashes[path] = hash;
             foreach (var (path, hash) in manifest.Alerted) _alerted[path] = hash;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or FormatException)
         {
-            // Sin baseline fiable se recalcula, pero el servicio sigue arrancando.
             _hashes.Clear();
             _alerted.Clear();
             IntegrityStatus = "invalid";
@@ -129,13 +225,13 @@ public sealed class RansomwareCanary
         }
     }
 
-    private static bool Verify(CanaryManifest manifest)
+    private bool Verify(CanaryManifest manifest)
     {
-        // Versiones anteriores no tenían firma: se migran una sola vez y se
-        // firman al guardar. Un manifiesto con versión 2 y firma ausente o
-        // distinta se considera alterado.
-        if (manifest.Version is null or < ManifestVersion) return true;
-        if (string.IsNullOrWhiteSpace(manifest.Signature)) return false;
+        // Un manifiesto sin versión ni firma es el formato heredado: se migra
+        // una sola vez. Cualquier otra combinación con versión distinta de la
+        // actual se rechaza, incluido un downgrade firmado.
+        if (manifest.Version is null && string.IsNullOrEmpty(manifest.Signature)) return true;
+        if (manifest.Version != ManifestVersion || string.IsNullOrWhiteSpace(manifest.Signature)) return false;
         try
         {
             var expected = Convert.FromHexString(Sign(manifest));
@@ -145,29 +241,19 @@ public sealed class RansomwareCanary
         catch (FormatException) { return false; }
     }
 
-    private static string Sign(CanaryManifest manifest)
+    private string Sign(CanaryManifest manifest)
     {
         var canonical = new
         {
             version = ManifestVersion,
+            keyVersion = KeyVersion,
             hashes = manifest.Hashes.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
             alerted = manifest.Alerted.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase)
         };
-        return Convert.ToHexString(HMACSHA256.HashData(ManifestKey(),
+        return Convert.ToHexString(HMACSHA256.HashData(_key!,
             Encoding.UTF8.GetBytes(JsonSerializer.Serialize(canonical, JsonDefaults.Options)))).ToLowerInvariant();
-    }
-
-    private static byte[] ManifestKey()
-    {
-        var label = Encoding.UTF8.GetBytes(KeyLabel);
-        // DPAPI liga la clave al usuario del servicio. No resiste a un proceso
-        // con los mismos privilegios: detecta edición casual o corrupción, no
-        // sustituye a un control de integridad en kernel.
-        return SHA256.HashData(OperatingSystem.IsWindows()
-            ? ProtectedData.Protect(label, null, DataProtectionScope.CurrentUser)
-            : label);
     }
 
     private void SaveManifest()
@@ -179,13 +265,44 @@ public sealed class RansomwareCanary
             Alerted = _alerted
         };
         manifest.Signature = Sign(manifest);
-        var temp = _manifestPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(manifest, JsonDefaults.Options));
-        File.Move(temp, _manifestPath, true);
-        if (!_manifestTampered) IntegrityStatus = "ok";
+        WriteAtomic(_manifestPath, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, JsonDefaults.Options)));
+        RestrictOrCount(_manifestPath);
+        if (!_manifestTampered && IntegrityStatus != "acl-failed") IntegrityStatus = "ok";
+    }
+
+    private static void WriteAtomic(string path, byte[] content)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(content);
+                stream.Flush(true);
+            }
+            if (OperatingSystem.IsWindows() && !LocalFileAcl.Restrict(temp))
+                throw new IOException("No se pudieron restringir los permisos del archivo temporal.");
+            File.Move(temp, path, true);
+        }
+        finally
+        {
+            try { File.Delete(temp); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* mejor esfuerzo */ }
+        }
     }
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        if (_key is not null)
+        {
+            CryptographicOperations.ZeroMemory(_key);
+            _key = null;
+        }
+    }
 
     private sealed class CanaryManifest
     {

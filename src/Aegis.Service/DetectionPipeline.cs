@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
 using Aegis.Core;
 
 namespace Aegis.Service;
@@ -161,7 +163,10 @@ public sealed class DetectionPipeline
 
     private async Task EnrichAsync(Observation o, List<RuleMatch> matches, CancellationToken ct)
     {
-        var isFileEvent = o.Kind is EventKind.FileCreated or EventKind.FileModified or EventKind.ManualScan;
+        // ProcessStarted también se enriquece: ETW observa la imagen y el motor
+        // debe calcular hash, firma y reglas sobre ella, no solo registrar el PID.
+        var isFileEvent = o.Kind is EventKind.FileCreated or EventKind.FileModified or
+            EventKind.ManualScan or EventKind.ProcessStarted;
         if (isFileEvent && File.Exists(o.Subject))
         {
             try
@@ -210,10 +215,31 @@ public sealed class DetectionPipeline
         {
             if (!string.IsNullOrWhiteSpace(o.Subject) && o.Subject.Contains(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase))
                 o.BehaviorFlags.Add("temp_execution");
-            if (!string.IsNullOrWhiteSpace(o.ParentProcess) &&
-                o.ParentProcess.Contains("WINWORD", StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(o.ParentProcess) && o.ParentProcess.Contains("EXCEL", StringComparison.OrdinalIgnoreCase)))
+            var parent = o.ParentProcess;
+            if (!string.IsNullOrWhiteSpace(parent) &&
+                (parent.Contains("WINWORD", StringComparison.OrdinalIgnoreCase) ||
+                 parent.Contains("EXCEL", StringComparison.OrdinalIgnoreCase)))
                 o.BehaviorFlags.Add("unusual_parent");
+
+            // Un PID puede reutilizarse: si el proceso actual no coincide con la
+            // hora de creación observada, la atribución no es fiable y se marca.
+            if (int.TryParse(o.ProcessId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid) && pid > 0 &&
+                o.Metadata.TryGetValue("processCreateTimeUtc", out var raw) &&
+                DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var reported))
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(pid);
+                    var actual = new DateTimeOffset(process.StartTime.ToUniversalTime());
+                    if (Math.Abs((actual - reported).TotalSeconds) > 2)
+                        o.BehaviorFlags.Add("pid_reuse_suspected");
+                }
+                catch (ArgumentException)
+                {
+                    // El proceso ya terminó: no es prueba de reutilización.
+                }
+            }
         }
 
         // La reputación se lee aquí para que los eventos de fichero ya tengan hash.
@@ -225,6 +251,14 @@ public sealed class DetectionPipeline
         var o = threat.Observation;
         var d = threat.Decision;
         var actions = new List<string>();
+
+        // Se resuelve antes de la cuarentena: si el archivo se mueve primero,
+        // la regla WFP quedaría solo por IP/puerto y perdería la aplicación.
+        var applicationPath = (o.Kind is EventKind.ProcessStarted or EventKind.NetworkConnection or
+            EventKind.FileCreated or EventKind.FileModified or EventKind.ManualScan) &&
+            !string.IsNullOrWhiteSpace(o.Subject) && File.Exists(o.Subject)
+                ? Path.GetFullPath(o.Subject)
+                : null;
 
         if (RemediationPolicy.ShouldQuarantine(d, policy) &&
             o.Kind is EventKind.FileCreated or EventKind.FileModified or EventKind.ManualScan &&
@@ -247,19 +281,13 @@ public sealed class DetectionPipeline
         {
             var spec = new FirewallRuleSpec
             {
-                Name = _firewall.BuildRuleName(new FirewallRuleSpec
-                {
-                    Block = true,
-                    ApplicationPath = File.Exists(o.Subject) ? o.Subject : null,
-                    RemoteAddresses = o.RemoteAddress,
-                    RemotePort = int.TryParse(o.RemotePort, out var port) ? port : null
-                }),
                 Block = true,
-                ApplicationPath = File.Exists(o.Subject) ? o.Subject : null,
+                ApplicationPath = applicationPath,
                 RemoteAddresses = o.RemoteAddress,
-                RemotePort = int.TryParse(o.RemotePort, out var port2) ? port2 : null,
+                RemotePort = int.TryParse(o.RemotePort, out var port) ? port : null,
                 Description = $"AEGIS Guard - {threat.Id} - riesgo {d.Risk}"
             };
+            spec.Name = _firewall.BuildRuleName(spec);
             try
             {
                 if (_firewall.AddRule(spec))

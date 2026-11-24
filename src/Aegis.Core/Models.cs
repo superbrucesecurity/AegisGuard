@@ -38,6 +38,8 @@ public enum SignatureStatus
     Unknown,
     SignedTrusted,
     SignedUntrusted,
+    /// <summary>La cadena no se pudo validar (por ejemplo, revocación sin caché). No es prueba de malware.</summary>
+    ChainNotVerifiable,
     Unsigned,
     NotApplicable
 }
@@ -169,8 +171,15 @@ public sealed class RuntimeStatus
     public long EventsTotal { get; set; }
     public long ThreatsTotal { get; set; }
     public long QuarantinedTotal { get; set; }
+    public long BlockedTotal { get; set; }
     public long BlockedNetworkTotal { get; set; }
     public long DroppedEvents { get; set; }
+    public long CoalescedEvents { get; set; }
+    public bool WatchersDegraded { get; set; }
+    public bool QueueSaturated { get; set; }
+    public int CriticalQueueDepth { get; set; }
+    public int NormalQueueDepth { get; set; }
+    public double OldestQueuedSeconds { get; set; }
     public List<double> RiskTrend { get; set; } = [];
     public PolicySettings Policy { get; set; } = new();
 }

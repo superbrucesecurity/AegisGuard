@@ -1,8 +1,14 @@
 (() => {
   'use strict';
 
-  const TOKEN = typeof window.AEGIS_TOKEN === 'string' ? window.AEGIS_TOKEN : '';
+  let token = typeof window.AEGIS_TOKEN === 'string' ? window.AEGIS_TOKEN : '';
+  let authRefreshPending = false;
+  const authFlag = 'aegis-auth-refresh';
+  const readAuthFlag = () => {
+    try { return sessionStorage.getItem(authFlag) === '1'; } catch { return false; }
+  };
   const state = {
+    health: null,
     status: null,
     events: [],
     threats: [],
@@ -36,7 +42,7 @@
   };
   const SIGNATURE = {
     SignedTrusted: 'Firma válida', SignedUntrusted: 'Firma no válida', Unsigned: 'Sin firma',
-    NotApplicable: 'No aplicable', Unknown: 'Desconocida'
+    ChainNotVerifiable: 'Cadena no verificable', NotApplicable: 'No aplicable', Unknown: 'Desconocida'
   };
 
   const TITLES = {
@@ -51,18 +57,29 @@
   };
 
   async function api(path, options = {}) {
-    const headers = { Accept: 'application/json', ...(options.headers || {}) };
-    if (TOKEN) headers.Authorization = `Bearer ${TOKEN}`;
+    const headers = { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) };
     if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
     const response = await fetch(path, { ...options, headers, cache: 'no-store' });
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
+      // Si el servicio regeneró ui-token, WebView2 vuelve a inyectarlo al
+      // recargar. Se permite una sola recarga para no entrar en un bucle.
+      if (token && !authRefreshPending && !readAuthFlag()) {
+        authRefreshPending = true;
+        try { sessionStorage.setItem(authFlag, '1'); } catch { /* almacenamiento no disponible */ }
+        window.location.reload();
+        throw new Error('La credencial local cambió; recargando la interfaz…');
+      }
       throw new Error('El servicio rechazó la credencial local. Reinicie AEGIS Guard.');
+    }
+    if (response.status === 403) {
+      throw new Error('Acceso denegado: la interfaz debe abrirse desde 127.0.0.1.');
     }
     if (!response.ok) {
       let detail = '';
       try { detail = (await response.json()).error || ''; } catch { /* cuerpo no JSON */ }
       throw new Error(detail || `Error HTTP ${response.status}`);
     }
+    try { sessionStorage.removeItem(authFlag); } catch { /* almacenamiento no disponible */ }
     if (response.status === 204) return null;
     return response.json();
   }
@@ -121,7 +138,9 @@
       limited: ['Protección limitada', 'La monitorización funciona, pero el firewall de Windows no está disponible.', 'warn'],
       degraded: ['Motor degradado', s.etwActive === false
         ? 'ETW no está disponible: se usa sondeo de procesos y watchers. Revise los permisos del servicio.'
-        : 'La monitorización en tiempo real no está activa. Revise los permisos del servicio.', 'bad'],
+        : s.monitorActive === false
+          ? 'La monitorización en tiempo real no está activa. Revise los permisos del servicio.'
+          : 'Se descartaron eventos o hay sensores degradados; la visibilidad no es completa.', 'bad'],
       starting: ['Iniciando motor…', 'Comprobando monitorización, firewall y reglas locales.', 'warn']
     };
     const [heroTitle, heroDescription, tone] = labels[s.protectionState] || labels.starting;
@@ -133,12 +152,18 @@
     $('#kpiEvents').textContent = number(s.eventsTotal);
     $('#kpiThreats').textContent = number(s.threatsTotal);
     if (state.ruleStats) $('#kpiBlocks').textContent = number(state.ruleStats.active);
+    if ($('#kpiActions')) $('#kpiActions').textContent =
+      `${number(s.blockedTotal || 0)} / ${number(s.quarantinedTotal || 0)}`;
     $('#kpiResources').textContent = `${number(s.cpuPercent)}% / ${Math.round((s.workingSetBytes || 0) / 1048576)} MB`;
+    if (state.health && $('#versionLabel')) $('#versionLabel').textContent =
+      `v${state.health.version || '3.0.0'} · motor local`;
 
     const tags = [
       ['Monitorización', s.monitorActive, 'good'],
       ['ETW', s.etwActive, s.etwActive ? 'good' : 'warn'],
-      ['Firewall WFP', s.firewallActive, 'good'],
+      ['Firewall WFP', s.firewallActive, s.firewallActive ? 'good' : 'warn'],
+      ['Sin pérdida de eventos', (s.droppedEvents || 0) === 0 && !s.queueSaturated && !s.watchersDegraded,
+        (s.droppedEvents || 0) === 0 && !s.queueSaturated && !s.watchersDegraded ? 'good' : 'warn'],
       ['Motor local', s.monitorActive, 'good'],
       ['Modo aprendizaje', !!s.policy?.learningMode, 'warn']
     ];
@@ -157,6 +182,8 @@
       ['Telemetría ETW', s.etwActive, 'ETW no disponible; se usa sondeo de procesos'],
       ['Firewall de Windows disponible', s.firewallActive],
       ['Eventos observados', (s.eventsTotal || 0) > 0],
+      ['Sin pérdida de visibilidad', (s.droppedEvents || 0) === 0 && !s.watchersDegraded && !s.queueSaturated,
+        'Se descartaron eventos o un watcher dejó de informar'],
       ['Amenazas revisadas', (s.threatsTotal || 0) > 0]
     ];
     $('#wizardList').innerHTML = steps.map(([label, done, pending]) =>
@@ -388,10 +415,11 @@
     if (inFlight.core) return;
     inFlight.core = true;
     try {
-      const [status, events, threats] = await Promise.all([
-        api('/api/status'), api('/api/events?limit=200'), api('/api/threats?limit=200')
+      const [status, health, events, threats] = await Promise.all([
+        api('/api/status'), api('/api/health'), api('/api/events?limit=200'), api('/api/threats?limit=200')
       ]);
       state.status = status;
+      state.health = health;
       state.events = events;
       state.threats = threats;
       renderStatus(); renderEvents(); renderThreats();

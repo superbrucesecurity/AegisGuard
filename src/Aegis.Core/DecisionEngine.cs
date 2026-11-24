@@ -80,6 +80,10 @@ public sealed class DecisionEngine
             Add("signature", "Firma digital no válida", 34);
         else if (observation.Signature == SignatureStatus.Unsigned && IsExecutable(observation))
             Add("signature", "Ejecutable sin firma digital", 12);
+        else if (observation.Signature == SignatureStatus.ChainNotVerifiable)
+            // Falta de caché de revocación: no es evidencia de malware. Solo
+            // añade una señal débil y nunca crítica.
+            Add("signature", "Cadena de certificados no verificable sin conexión", 8);
 
         if (observation.Reputation < 0.2)
             Add("reputation", "Reputación muy baja", 28);
@@ -98,6 +102,9 @@ public sealed class DecisionEngine
                 "c2_beacon" => 45,
                 "persistence_registry" => 35,
                 "unusual_parent" or "temp_execution" => 14,
+                "file_renamed" => 8,
+                "pid_reuse_suspected" => 35,
+                "sensor_queue_saturated" => 40,
                 _ => 0
             };
             if (weight == 0) continue;
@@ -136,7 +143,8 @@ public sealed class DecisionEngine
     private static bool IsExecutable(Observation o)
     {
         var ext = o.FileExtension?.TrimStart('.').ToLowerInvariant();
-        return ext is "exe" or "dll" or "sys" or "scr" or "com" or "msi" or "ps1" or "bat" or "cmd" or "vbs" or "js" or "hta";
+        return ext is "exe" or "dll" or "sys" or "scr" or "com" or "msi" or "msp" or "msc" or
+            "cpl" or "ocx" or "drv" or "ps1" or "bat" or "cmd" or "vbs" or "js" or "jse" or "hta";
     }
 
     private static bool IsPublicIp(string value)

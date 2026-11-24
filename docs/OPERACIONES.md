@@ -12,9 +12,11 @@ Invoke-RestMethod http://127.0.0.1:8787/api/health -Headers $h
 Invoke-RestMethod http://127.0.0.1:8787/api/status -Headers $h
 ```
 
-`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`).
+`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados.
 
-El token local se genera al arrancar el servicio y se guarda con permisos restringidos a SYSTEM, administradores y usuario del servicio. Si el archivo ya existía con una ACL débil, los permisos se reparan al cargarlo. Reinicie el servicio si necesita invalidar una sesión.
+El token local persiste entre arranques y se guarda con permisos restringidos a SYSTEM, administradores y usuario del servicio. Si el archivo ya existía con una ACL débil, los permisos se reparan al cargarlo. Si está corrupto se conserva como `ui-token.invalid-*` y se genera uno nuevo; la UI se recarga una sola vez para volver a leerlo. Para invalidarlo deliberadamente, detenga el servicio y elimine `ui-token`.
+
+`PUT /api/settings` aplica `maxEvents` en caliente, sin reiniciar el servicio. El valor se valida antes de persistirse y el historial en memoria se recorta de inmediato.
 
 ## Validación aislada del instalador
 
@@ -37,7 +39,7 @@ El desinstalador elimina tareas con el prefijo indicado (`AegisSmoke *`), acceso
 | `protected` | Monitor y firewall activos, sin aprendizaje. |
 | `learning` | Monitor y firewall activos, modo aprendizaje; no se bloquea tráfico nuevo. |
 | `limited` | Monitor activo pero WFP no disponible. |
-| `degraded` | Monitorización no activa o ETW caído (se usa sondeo de procesos); revisar permisos. |
+| `degraded` | Monitorización o ETW no activos, eventos descartados, watchers caídos, cola saturada o eventos con más de 30 s de antigüedad. La visibilidad no es completa; revisar permisos y carga. |
 
 ## Ajustes recomendados
 

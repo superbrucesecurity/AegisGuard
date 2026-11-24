@@ -1,3 +1,4 @@
+using System.Reflection;
 using Aegis.Core;
 
 namespace Aegis.Tests;
@@ -37,4 +38,44 @@ public sealed class FileInspectorTests
         Assert.True(FileInspector.ContainsEicarSample(
             System.Text.Encoding.ASCII.GetBytes("INICIO" + System.Text.Encoding.ASCII.GetString(FileInspector.EicarSampleBytes) + "FIN")));
     }
+
+    [Fact]
+    public void EicarIsFoundAcrossReadBoundaries()
+    {
+        var sample = FileInspector.EicarSampleBytes;
+        var scanner = new FileInspector.EicarScanner();
+        scanner.Scan(System.Text.Encoding.ASCII.GetBytes("prefijo"));
+        scanner.Scan(sample.AsSpan(0, 31));
+        Assert.False(scanner.Found);
+        scanner.Scan(sample.AsSpan(31));
+        Assert.True(scanner.Found);
+    }
+
+    [Fact]
+    public void WinTrustStateActionsUseDocumentedValues()
+    {
+        var type = typeof(FileInspector);
+        var verify = type.GetField("WtdStateActionVerify", BindingFlags.NonPublic | BindingFlags.Static);
+        var close = type.GetField("WtdStateActionClose", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(verify);
+        Assert.NotNull(close);
+        Assert.Equal(1u, Convert.ToUInt32(verify!.GetRawConstantValue()));
+        Assert.Equal(2u, Convert.ToUInt32(close!.GetRawConstantValue()));
+    }
+
+    [Theory]
+    [InlineData(0, SignatureStatus.SignedTrusted)]
+    [InlineData(unchecked((int)0x800B0100), SignatureStatus.Unsigned)]  // TRUST_E_NOSIGNATURE
+    [InlineData(unchecked((int)0x800B0003), SignatureStatus.Unsigned)]  // TRUST_E_SUBJECT_FORM_UNKNOWN
+    [InlineData(unchecked((int)0x800B0001), SignatureStatus.Unsigned)]  // TRUST_E_PROVIDER_UNKNOWN
+    [InlineData(unchecked((int)0x800B0109), SignatureStatus.SignedUntrusted)] // CERT_E_UNTRUSTEDROOT
+    [InlineData(unchecked((int)0x800B010C), SignatureStatus.SignedUntrusted)] // CERT_E_REVOKED
+    [InlineData(unchecked((int)0x80096010), SignatureStatus.SignedUntrusted)] // TRUST_E_BAD_DIGEST
+    [InlineData(unchecked((int)0x800B010E), SignatureStatus.ChainNotVerifiable)] // CERT_E_REVOCATION_FAILURE
+    [InlineData(unchecked((int)0x80092012), SignatureStatus.ChainNotVerifiable)] // CRYPT_E_REVOCATION_OFFLINE
+    [InlineData(unchecked((int)0x80092010), SignatureStatus.Unknown)] // CRYPT_E_FILE_ERROR
+    [InlineData(unchecked((int)0x80070005), SignatureStatus.Unknown)] // ERROR_ACCESS_DENIED
+    [InlineData(unchecked((int)0x80070057), SignatureStatus.Unknown)] // E_INVALIDARG
+    public void WinTrustStatusesAreClassifiedLocally(int status, SignatureStatus expected) =>
+        Assert.Equal(expected, FileInspector.ClassifyWinTrustStatus(status));
 }

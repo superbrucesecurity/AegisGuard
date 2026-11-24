@@ -31,6 +31,41 @@ public sealed class ApiTokenProviderTests : IDisposable
     }
 
     [Fact]
+    public void CorruptTokenIsRegeneratedWithoutBlockingStartup()
+    {
+        var file = Path.Combine(_root, "ui-token");
+        File.WriteAllText(file, "token-truncado");
+
+        var provider = new ApiTokenProvider(_root);
+        provider.LoadOrCreate();
+
+        Assert.Equal(44, provider.Token.Length);
+        Assert.Equal(Convert.ToBase64String(new byte[32]).Length, provider.Token.Length);
+        Assert.NotEqual("token-truncado", provider.Token);
+        Assert.True(provider.Matches("Bearer " + provider.Token));
+        Assert.Contains(Directory.EnumerateFiles(_root, "ui-token.invalid-*"),
+            p => File.ReadAllText(p) == "token-truncado");
+    }
+
+    [Fact]
+    public void AuthorizationIsComparedInConstantTime()
+    {
+        var provider = new ApiTokenProvider(_root);
+        provider.LoadOrCreate();
+
+        Assert.True(provider.Matches("Bearer " + provider.Token));
+        Assert.False(provider.Matches(null));
+        Assert.False(provider.Matches(string.Empty));
+        Assert.False(provider.Matches("Basic " + provider.Token));
+        Assert.False(provider.Matches("Bearer " + provider.Token + "x"));
+        Assert.False(provider.Matches("Bearer " + provider.Token[..^1]));
+
+        var restarted = new ApiTokenProvider(_root);
+        restarted.LoadOrCreate();
+        Assert.True(restarted.Matches("Bearer " + provider.Token));
+    }
+
+    [Fact]
     public void WeakAclOnExistingTokenIsRepaired()
     {
         var file = Path.Combine(_root, "ui-token");

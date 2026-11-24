@@ -32,6 +32,7 @@ Dos detalles aprendidos en pruebas reales:
 
 - Los campos `daddr`/`saddr` de ETW de red llegan como `Int32` **little-endian**. `16777343` es `127.0.0.1`, no `1.0.0.127`. La conversión vive en `Aegis.Core/TelemetryUtils.cs` y tiene pruebas.
 - Una conexión establecida genera miles de eventos por minuto. `EventDeduplicator` conserva un único registro por destino cada 10 segundos. En el equipo de desarrollo esto bajó de ~2470 eventos/6 s a ~18 eventos/12 s.
+- `PriorityObservationQueue` añade dos colas: las alertas críticas se drenan primero, los duplicados se coalescionan y los descartes se contabilizan. Si se pierde visibilidad, el estado pasa a `degraded` y se genera una alerta; un watcher en error se recrea.
 
 ## 2. Enriquecimiento local
 
@@ -40,10 +41,10 @@ Cada observación se enriquece con señales que no salen del equipo:
 | Señal | Qué aporta |
 | --- | --- |
 | SHA-256 | Identidad del fichero y comparación con listas locales. |
-| Firma Authenticode | Distingue firmado de confianza, firmado no válido y sin firma. |
+| Firma Authenticode | Distingue `SignedTrusted`, `SignedUntrusted`, `Unsigned`, `ChainNotVerifiable` y `Unknown`. Usa ciclo WinTrust completo con cierre del handle y solo caché local de revocación; una firma válida no certifica inocuidad. |
 | Reputación local | Historial de decisiones de la sesión, en memoria y sin consultas remotas. |
 | YARA-lite | Subconjunto de YARA: cadenas, hexadecimal con `??`, `nocase`/`wide` y `severity`. |
-| Heurística | Banderas realmente producidas por el monitor: persistencia en registro, modificación de canarios, manifiesto de canarios alterado, beacon C2, ejecución desde `%TEMP%` y padre inusual (Office). |
+| Heurística | Banderas realmente producidas por el monitor: persistencia en registro, modificación de canarios, manifiesto de canarios alterado, beacon C2, ejecución desde `%TEMP%`, padre inusual (Office), renombrado, reutilización de PID y saturación de cola. |
 
 Las banderas que el monitor no produce se ignoran: no puntúan capacidades no implementadas. `Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
 
@@ -70,7 +71,7 @@ En modo aprendizaje las decisiones se registran, pero no se aplican cuarentena n
 
 ## 5. Interfaz y API
 
-La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). El token local se genera en `%AEGIS_DATA_DIR%\ui-token` (por defecto `C:\ProgramData\AegisGuard\ui-token`) y se inyecta en la página como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. Todas las rutas `/api` exigen `Bearer` y solo escuchan en `127.0.0.1`; `/healthz` es público y no expone estado.
+La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). El token local persiste en `%AEGIS_DATA_DIR%\ui-token` (por defecto `C:\ProgramData\AegisGuard\ui-token`) y se inyecta en la página como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. Si el archivo está corrupto se regenera de forma atómica y la SPA se recarga una vez. Todas las rutas `/api` exigen `Bearer` comparado en tiempo constante y solo escuchan en `127.0.0.1`; `/healthz` es público y no expone estado.
 
 Los datos mostrados son reales: no hay valores de ejemplo ni controles decorativos.
 

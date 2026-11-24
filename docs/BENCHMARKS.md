@@ -39,7 +39,7 @@ El JSON completo de esa ejecución se generó en `artifacts/benchmark-lote4.json
 | --- | --- |
 | Fecha (UTC) | 2026-11-24T22:20:10Z |
 | Duración | 20 s, 20 muestras, sin análisis activo |
-| Compilación | Debug (la ampliación a Release se planifica en la Fase 6) |
+| Compilación | Debug (la medición Release se realizó después, en la Fase 6) |
 | CPU media / máximo puntual | 0,25 % / 2 % |
 | RAM media / máxima | 81,8 MB / 84,6 MB (85 766 963 / 88 723 456 bytes) |
 | Estado | `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `droppedEvents=0`, 50 eventos y 50 duplicados coalescionados |

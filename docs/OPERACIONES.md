@@ -85,10 +85,11 @@ Objetivos y observación histórica en el equipo de desarrollo:
 
 | Métrica | Objetivo | Observado históricamente |
 | --- | --- | --- |
-| CPU media en reposo | < 1 % | 0,25 % (máximo puntual 2 %) |
-| RAM residente del servicio | < 150 MB | 79,9 MB de media (82,0 MB de máximo) |
+| CPU media en reposo | < 1 % | 0,3 % (máximo puntual 3 %) en Release |
+| RAM residente del servicio | < 150 MB | 84,47 MB de media (87,84 MB de máximo) en Release |
+| Pérdida de eventos con carga sintética | 0 | `droppedEvents=0`, colas a 0 tras 21 escaneos |
 
-Medición de 20 s con 24 núcleos lógicos, monitorización y WFP activos, sin escaneos manuales. Se repite con `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Measure-Aegis.ps1 -Seconds 30`; el resultado se guarda en `artifacts/benchmark.json`. El método, el estado del servicio durante la medición y las advertencias están en [benchmarks](BENCHMARKS.md). No se realizan escaneos completos periódicos: el análisis se dispara por evento y se deduplica.
+Medición de 20 s con 24 núcleos lógicos, monitorización y WFP activos, compilación Release, UI y WebView2 ejecutándose y una fase de carga de 21 escaneos sintéticos. Se repite con `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Measure-Aegis.ps1 -Seconds 20 -Configuration Release -LaunchUi`; el resultado se guarda en `artifacts/benchmark.json`. `-SkipLoad` omite la carga y `-ScanCount` ajusta su tamaño. WebView2 se mide aparte y su RAM no se suma a la del servicio. El método, el estado real del servicio y las advertencias están en [benchmarks](BENCHMARKS.md). No se realizan escaneos completos periódicos: el análisis se dispara por evento y se deduplica.
 
 ## Respuesta a incidentes
 

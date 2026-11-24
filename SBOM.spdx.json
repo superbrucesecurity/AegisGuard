@@ -1,0 +1,822 @@
+{
+    "spdxVersion":  "SPDX-2.3",
+    "dataLicense":  "CC0-1.0",
+    "SPDXID":  "SPDXRef-DOCUMENT",
+    "name":  "AegisGuard-3.0.0",
+    "documentNamespace":  "https://github.com/superbrucesecurity/AegisGuard/spdx/v3.0.0",
+    "creationInfo":  {
+                         "created":  "2026-11-24T22:49:12Z",
+                         "creators":  [
+                                          "Tool: AegisGuard-Generate-Sbom-1.0",
+                                          "Organization: superbrucesecurity"
+                                      ]
+                     },
+    "documentDescribes":  [
+                              "SPDXRef-Package-AegisGuard"
+                          ],
+    "packages":  [
+                     {
+                         "name":  "AegisGuard",
+                         "SPDXID":  "SPDXRef-Package-AegisGuard",
+                         "versionInfo":  "3.0.0",
+                         "downloadLocation":  "NOASSERTION",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "NOASSERTION",
+                         "licenseDeclared":  "NOASSERTION",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: superbrucesecurity",
+                         "description":  "Local Windows antivirus and firewall platform"
+                     },
+                     {
+                         "name":  "System.Security.Cryptography.ProtectedData",
+                         "SPDXID":  "SPDXRef-Package-System.Security.Cryptography.ProtectedData-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/System.Security.Cryptography.ProtectedData/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Diagnostics.Tracing.TraceEvent",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Diagnostics.Tracing.TraceEvent-4.0.0",
+                         "versionInfo":  "4.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent/4.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Hosting.WindowsServices",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Hosting.WindowsServices-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Hosting.WindowsServices/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Diagnostics.NETCore.Client",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Diagnostics.NETCore.Client-0.2.661903",
+                         "versionInfo":  "0.2.661903",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Diagnostics.NETCore.Client/0.2.661903",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "System.Reflection.TypeExtensions",
+                         "SPDXID":  "SPDXRef-Package-System.Reflection.TypeExtensions-4.7.0",
+                         "versionInfo":  "4.7.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/System.Reflection.TypeExtensions/4.7.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "System.ServiceProcess.ServiceController",
+                         "SPDXID":  "SPDXRef-Package-System.ServiceProcess.ServiceController-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/System.ServiceProcess.ServiceController/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Web.WebView2",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Web.WebView2-1.0.3650.58",
+                         "versionInfo":  "1.0.3650.58",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3650.58",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "BSD-3-Clause",
+                         "licenseDeclared":  "BSD-3-Clause",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "coverlet.collector",
+                         "SPDXID":  "SPDXRef-Package-coverlet.collector-6.0.4",
+                         "versionInfo":  "6.0.4",
+                         "downloadLocation":  "https://www.nuget.org/packages/coverlet.collector/6.0.4",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.NET.Test.Sdk",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.NET.Test.Sdk-18.0.1",
+                         "versionInfo":  "18.0.1",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.NET.Test.Sdk/18.0.1",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit",
+                         "SPDXID":  "SPDXRef-Package-xunit-2.9.3",
+                         "versionInfo":  "2.9.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit/2.9.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.runner.visualstudio",
+                         "SPDXID":  "SPDXRef-Package-xunit.runner.visualstudio-3.1.4",
+                         "versionInfo":  "3.1.4",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.runner.visualstudio/3.1.4",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.CodeCoverage",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.CodeCoverage-18.0.1",
+                         "versionInfo":  "18.0.1",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.CodeCoverage/18.0.1",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.Abstractions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.Abstractions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.Abstractions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.Binder",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.Binder-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.Binder/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.CommandLine",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.CommandLine-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.CommandLine/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.EnvironmentVariables",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.EnvironmentVariables-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.EnvironmentVariables/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.FileExtensions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.FileExtensions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.FileExtensions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.Json",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.Json-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.Json/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Configuration.UserSecrets",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Configuration.UserSecrets-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Configuration.UserSecrets/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.DependencyInjection",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.DependencyInjection-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.DependencyInjection/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.DependencyInjection.Abstractions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.DependencyInjection.Abstractions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.DependencyInjection.Abstractions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Diagnostics",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Diagnostics-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Diagnostics/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Diagnostics.Abstractions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Diagnostics.Abstractions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Diagnostics.Abstractions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.FileProviders.Abstractions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.FileProviders.Abstractions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.FileProviders.Abstractions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.FileProviders.Physical",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.FileProviders.Physical-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.FileProviders.Physical/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.FileSystemGlobbing",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.FileSystemGlobbing-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.FileSystemGlobbing/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Hosting",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Hosting-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Hosting/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Hosting.Abstractions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Hosting.Abstractions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Hosting.Abstractions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging.Abstractions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging.Abstractions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging.Abstractions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging.Configuration",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging.Configuration-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging.Configuration/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging.Console",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging.Console-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging.Console/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging.Debug",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging.Debug-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging.Debug/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging.EventLog",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging.EventLog-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging.EventLog/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Logging.EventSource",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Logging.EventSource-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Logging.EventSource/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Options",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Options-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Options/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Options.ConfigurationExtensions",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Options.ConfigurationExtensions-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Options.ConfigurationExtensions/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.Extensions.Primitives",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.Extensions.Primitives-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.Extensions.Primitives/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.TestPlatform.ObjectModel",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.TestPlatform.ObjectModel-18.0.1",
+                         "versionInfo":  "18.0.1",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.TestPlatform.ObjectModel/18.0.1",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Microsoft.TestPlatform.TestHost",
+                         "SPDXID":  "SPDXRef-Package-Microsoft.TestPlatform.TestHost-18.0.1",
+                         "versionInfo":  "18.0.1",
+                         "downloadLocation":  "https://www.nuget.org/packages/Microsoft.TestPlatform.TestHost/18.0.1",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "Newtonsoft.Json",
+                         "SPDXID":  "SPDXRef-Package-Newtonsoft.Json-13.0.3",
+                         "versionInfo":  "13.0.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/Newtonsoft.Json/13.0.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "System.Diagnostics.EventLog",
+                         "SPDXID":  "SPDXRef-Package-System.Diagnostics.EventLog-10.0.0",
+                         "versionInfo":  "10.0.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/System.Diagnostics.EventLog/10.0.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "MIT",
+                         "licenseDeclared":  "MIT",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.abstractions",
+                         "SPDXID":  "SPDXRef-Package-xunit.abstractions-2.0.3",
+                         "versionInfo":  "2.0.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.abstractions/2.0.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "LicenseRef-URL:https://raw.githubusercontent.com/xunit/xunit/master/license.txt",
+                         "licenseDeclared":  "LicenseRef-URL:https://raw.githubusercontent.com/xunit/xunit/master/license.txt",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.analyzers",
+                         "SPDXID":  "SPDXRef-Package-xunit.analyzers-1.18.0",
+                         "versionInfo":  "1.18.0",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.analyzers/1.18.0",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.assert",
+                         "SPDXID":  "SPDXRef-Package-xunit.assert-2.9.3",
+                         "versionInfo":  "2.9.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.assert/2.9.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.core",
+                         "SPDXID":  "SPDXRef-Package-xunit.core-2.9.3",
+                         "versionInfo":  "2.9.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.core/2.9.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.extensibility.core",
+                         "SPDXID":  "SPDXRef-Package-xunit.extensibility.core-2.9.3",
+                         "versionInfo":  "2.9.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.extensibility.core/2.9.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     },
+                     {
+                         "name":  "xunit.extensibility.execution",
+                         "SPDXID":  "SPDXRef-Package-xunit.extensibility.execution-2.9.3",
+                         "versionInfo":  "2.9.3",
+                         "downloadLocation":  "https://www.nuget.org/packages/xunit.extensibility.execution/2.9.3",
+                         "filesAnalyzed":  false,
+                         "licenseConcluded":  "Apache-2.0",
+                         "licenseDeclared":  "Apache-2.0",
+                         "copyrightText":  "NOASSERTION",
+                         "supplier":  "Organization: NuGet package publisher"
+                     }
+                 ],
+    "relationships":  [
+                          {
+                              "spdxElementId":  "SPDXRef-DOCUMENT",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DESCRIBES"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-System.Security.Cryptography.ProtectedData-10.0.0",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-Microsoft.Diagnostics.Tracing.TraceEvent-4.0.0",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-Microsoft.Extensions.Hosting.WindowsServices-10.0.0",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-Microsoft.Diagnostics.NETCore.Client-0.2.661903",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-System.Reflection.TypeExtensions-4.7.0",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-System.ServiceProcess.ServiceController-10.0.0",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-AegisGuard",
+                              "relatedSpdxElement":  "SPDXRef-Package-Microsoft.Web.WebView2-1.0.3650.58",
+                              "relationshipType":  "DEPENDS_ON"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-coverlet.collector-6.0.4",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.NET.Test.Sdk-18.0.1",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit-2.9.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.runner.visualstudio-3.1.4",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.CodeCoverage-18.0.1",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.Abstractions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.Binder-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.CommandLine-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.EnvironmentVariables-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.FileExtensions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.Json-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Configuration.UserSecrets-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.DependencyInjection-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.DependencyInjection.Abstractions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Diagnostics-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Diagnostics.Abstractions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.FileProviders.Abstractions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.FileProviders.Physical-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.FileSystemGlobbing-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Hosting-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Hosting.Abstractions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging.Abstractions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging.Configuration-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging.Console-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging.Debug-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging.EventLog-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Logging.EventSource-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Options-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Options.ConfigurationExtensions-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.Extensions.Primitives-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.TestPlatform.ObjectModel-18.0.1",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Microsoft.TestPlatform.TestHost-18.0.1",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-Newtonsoft.Json-13.0.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-System.Diagnostics.EventLog-10.0.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.abstractions-2.0.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.analyzers-1.18.0",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.assert-2.9.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.core-2.9.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.extensibility.core-2.9.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          },
+                          {
+                              "spdxElementId":  "SPDXRef-Package-xunit.extensibility.execution-2.9.3",
+                              "relatedSpdxElement":  "SPDXRef-Package-AegisGuard",
+                              "relationshipType":  "DEV_DEPENDENCY_OF"
+                          }
+                      ]
+}

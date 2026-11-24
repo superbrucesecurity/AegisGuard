@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$InstallDir = "$env:ProgramFiles\AegisGuard",
     [string]$DataDir = "$env:ProgramData\AegisGuard",
@@ -87,6 +87,22 @@ try {
     $rulesDest = Join-Path $InstallDir 'rules'
     New-Item -ItemType Directory -Force -Path $rulesDest | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $root 'rules') -File | Copy-Item -Destination $rulesDest -Force
+
+    # Versión única: el instalador no duplica el número, lo lee del props.
+    $props = Get-Content -LiteralPath (Join-Path $root 'Directory.Build.props') -Raw
+    if ($props -notmatch '<Version>([^<]+)</Version>') { throw 'No se encontró <Version> en Directory.Build.props.' }
+    $version = $Matches[1].Trim()
+    [IO.File]::WriteAllText((Join-Path $InstallDir 'VERSION'), $version + "`r`n")
+    foreach ($document in @('LICENSE', 'SBOM.spdx.json', 'THIRD-PARTY-NOTICES.md')) {
+        $source = Join-Path $root $document
+        if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination (Join-Path $InstallDir $document) -Force }
+    }
+    $licensesSource = Join-Path $root 'licenses'
+    if (Test-Path -LiteralPath $licensesSource -PathType Container) {
+        $licensesDest = Join-Path $InstallDir 'licenses'
+        New-Item -ItemType Directory -Force -Path $licensesDest | Out-Null
+        Copy-Item -Path (Join-Path $licensesSource '*') -Destination $licensesDest -Recurse -Force
+    }
 
     $serviceExe = Join-Path $InstallDir 'Aegis.Service\Aegis.Service.exe'
     $uiExe = Join-Path $InstallDir 'Aegis.UI\Aegis.UI.exe'

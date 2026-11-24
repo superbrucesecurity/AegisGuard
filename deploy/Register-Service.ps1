@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
@@ -6,7 +6,9 @@ param(
     [string]$DataDir,
     [string]$ServiceName = 'AegisGuardSvc',
     [string]$DisplayName = 'Aegis Guard Service',
-    [string]$TaskPrefix = 'AegisGuard'
+    [string]$TaskPrefix = 'AegisGuard',
+    [string]$IntelPackageDir,
+    [string]$IntelKeyHash
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +46,17 @@ function Invoke-ScStrict([string[]]$ScArgs) {
 
 if ($ServiceName -notmatch '^[A-Za-z0-9_.-]{1,80}$') {
     throw "Nombre de servicio no valido: $ServiceName"
+}
+$hasPackageDir = -not [string]::IsNullOrWhiteSpace($IntelPackageDir)
+$hasKeyHash = -not [string]::IsNullOrWhiteSpace($IntelKeyHash)
+if ($hasPackageDir -ne $hasKeyHash) {
+    throw 'Debe indicar juntos IntelPackageDir e IntelKeyHash, o ninguno.'
+}
+if ($hasKeyHash -and $IntelKeyHash -notmatch '^[0-9a-fA-F]{64}$') {
+    throw 'IntelKeyHash debe ser un SHA-256 de 64 caracteres hexadecimales.'
+}
+if ($hasPackageDir -and -not (Test-Path -LiteralPath $IntelPackageDir -PathType Container)) {
+    throw "No se encontro el paquete de inteligencia: $IntelPackageDir"
 }
 
 $InstallDir = Assert-SafeDirectory $InstallDir 'InstallDir'
@@ -105,6 +118,10 @@ $serviceEnv = @(
     'AEGIS_SERVICE_MANAGED=1',
     "AEGIS_UI_USER_SID=$uiSid"
 )
+if ($hasPackageDir) {
+    $serviceEnv += "AEGIS_INTEL_PACKAGE_DIR=$IntelPackageDir"
+    $serviceEnv += "AEGIS_INTEL_KEY_SHA256=$IntelKeyHash"
+}
 New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" `
     -Name Environment -PropertyType MultiString -Value $serviceEnv -Force | Out-Null
 

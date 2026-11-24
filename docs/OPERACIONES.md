@@ -28,11 +28,22 @@ El ciclo se puede probar sin tocar las rutas de producción:
 $iso = Join-Path $env:TEMP 'aegis-install-smoke'
 .\deploy\install.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard"
 .\deploy\finish.cmd "$iso\Program" "$iso\AegisGuard" AegisSmoke "Aegis Smoke" AegisSmokeSvc
+# Opcional: añada [INTELPACKAGEDIR] e [INTELKEYHASH] como argumentos sexto y séptimo
+# para registrar un paquete firmado; si se omiten, se usan las variables de entorno.
 # finish.cmd crea e inicia el servicio: comprobar Get-Service, /api/status y eventos.
 .\deploy\uninstall.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -TaskPrefix AegisSmoke -ServiceName AegisSmokeSvc -Yes
 ```
 
 El desinstalador detiene y elimina el servicio indicado, elimina tareas heredadas con el prefijo indicado (`AegisSmoke *`), el proveedor de eventos, accesos directos, reglas de firewall `AEGIS Guard*`, canarios y datos aislados. Antes de borrar un canario comprueba que la ruta del manifiesto es un archivo `*.aegis-canary-*.txt` dentro del escritorio, Documentos o Descargas del perfil: un manifiesto manipulado no puede convertir la desinstalación en un borrado arbitrario. `uninstall.ps1` acepta `-TaskPrefix`, `-ServiceName` y `-ShortcutName` para limpiar despliegues con otros nombres. No se definieron variables de entorno secretas: el producto no necesita credenciales.
+
+## Trazabilidad de la distribución
+
+`deploy/Generate-Sbom.ps1` genera `SBOM.spdx.json` (SPDX 2.3) y `THIRD-PARTY-NOTICES.md` a partir de `dotnet list package --include-transitive --format json` y de los `.nuspec` reales de la caché NuGet. El instalador copia ambos archivos, `LICENSE`, `VERSION` y los textos de licencias de terceros (`licenses/`) al directorio de instalación.
+
+- `Directory.Build.props` es la única fuente del número `3.0.0`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. No hay versiones duplicadas en los scripts.
+- `LICENSE` declara el código propietario, con todos los derechos reservados. El código se publica únicamente para transparencia y verificación, sin permiso de reuso sin acuerdo escrito. Las dependencias conservan sus propias licencias; consulte `THIRD-PARTY-NOTICES.md`.
+- Para regenerar el SBOM después de cambiar dependencias: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Generate-Sbom.ps1`. Revise el diff: las entradas `NOASSERTION` requieren revisión manual del paquete.
+- `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME] [INTELPACKAGEDIR] [INTELKEYHASH]` acepta opcionalmente el paquete firmado de la Fase 4. Si no se pasan los argumentos, se usan las variables de entorno `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256`. `Register-Service.ps1` exige ambas o ninguna y valida el SHA-256 de 64 hexadecimales antes de escribirlas en el entorno del SCM.
 
 ## Estados de protección
 

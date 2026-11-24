@@ -52,6 +52,8 @@ Cada observación se enriquece con señales que no salen del equipo:
 
 Las banderas que el monitor no produce se ignoran: no puntúan capacidades no implementadas. `Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
 
+Las reglas pueden venir del juego incluido con el binario o de un paquete local firmado: el manifiesto se verifica con ECDSA P-256, la clave pública se fija mediante `AEGIS_INTEL_KEY_SHA256` y cada fichero se comprueba por SHA-256 antes de cargarse. Si algo cambia, no se carga nada del paquete y `/api/status` indica `rejected:<motivo>`. No hay descarga ni decisión remota.
+
 Cada evidencia lleva un `RuleId`, un analizador y una cadena verificable. Por ejemplo, una sección ejecutable y escribible aparece en las razones como `pe: PE-WRITABLE-EXECUTABLE-SECTION: … [.text (0xE0000020)] (+22)`. Al terminar el análisis se recalcula el hash para detectar que el fichero cambió mientras se inspeccionaba. Los contenedores cifrados o no interpretables se muestran como no verificados, no como limpios.
 
 ## 3. Decisión determinista local

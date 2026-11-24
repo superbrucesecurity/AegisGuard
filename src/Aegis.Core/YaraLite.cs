@@ -28,13 +28,19 @@ public sealed class YaraLiteEngine
     public int LoadDirectory(string directory)
     {
         if (!Directory.Exists(directory)) return 0;
+        return LoadFiles(Directory.EnumerateFiles(directory, "*.yar", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.EnumerateFiles(directory, "*.yara", SearchOption.TopDirectoryOnly)));
+    }
+
+    /// <summary>Carga exclusivamente las rutas indicadas (por ejemplo, las de un paquete verificado).</summary>
+    public int LoadFiles(IEnumerable<string> files)
+    {
         var loaded = 0;
-        foreach (var file in Directory.EnumerateFiles(directory, "*.yar", SearchOption.TopDirectoryOnly)
-                     .Concat(Directory.EnumerateFiles(directory, "*.yara", SearchOption.TopDirectoryOnly)))
+        foreach (var file in files)
         {
             try
             {
-                if (new FileInfo(file).Length > MaxRuleFileBytes) continue;
+                if (!File.Exists(file) || new FileInfo(file).Length > MaxRuleFileBytes) continue;
                 var rules = Parse(File.ReadAllText(file));
                 lock (_gate) _rules.AddRange(rules);
                 loaded += rules.Count;

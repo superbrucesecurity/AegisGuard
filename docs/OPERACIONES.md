@@ -12,7 +12,7 @@ Invoke-RestMethod http://127.0.0.1:8787/api/health -Headers $h
 Invoke-RestMethod http://127.0.0.1:8787/api/status -Headers $h
 ```
 
-`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección.
+`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección. `intelStatus` distingue `bundled`, `verified:<versión>` y `rejected:<motivo>`; un paquete rechazado no cambia por sí solo el estado de monitorización, pero deja la inteligencia opcional sin cargar y debe corregirse.
 
 El servicio se registra con `sc.exe create ... start= auto`, `binPath` directo al ejecutable y acciones de recuperación `restart/5000`, `restart/10000`, `restart/30000`. No usa `schtasks /SC ONLOGON`: el inicio no depende de que haya sesión. El evento de arranque y el apagado ordenado se escriben en el registro de eventos de Windows con el proveedor del nombre del servicio. `run-service.cmd` solo se conserva para diagnóstico manual.
 
@@ -61,7 +61,12 @@ El desinstalador detiene y elimina el servicio indicado, elimina tareas heredada
 - Reglas YARA-lite en `%AEGIS_RULES_DIR%` (o `C:\Program Files\AegisGuard\rules`).
 - Lista de hashes y dominios en `threat-intel.json` dentro de ese mismo directorio.
 - Sintaxis admitida: cadenas y hexadecimal con `??`, modificadores `nocase`/`wide`, meta `severity`/`description`/`sha256`, condiciones `all/any/N of them` (con listas y paréntesis), `filesize`, `uint16/32()` y `hash.sha256`.
-- No hay descarga de firmas. Si se añade un canal de actualización, debe verificar firma y hash antes de aplicar cambios y no ser necesario para la protección local.
+- No hay descarga de firmas. Opcionalmente se puede aplicar un paquete local firmado:
+  1. Genere una clave ECDSA P-256 de publicación fuera del equipo destino; guárdela como JSON con `algorithm`, `d`, `x` e `y` en hexadecimal y no la incluya en el producto.
+  2. Ejecute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Build-IntelPackage.ps1 -SigningKeyPath <clave.json> -OutputPath <paquete> -Version <versión>`. El script imprime la huella que debe fijarse como `AEGIS_INTEL_KEY_SHA256`.
+  3. Copie el paquete al equipo y configure `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256` para el servicio; reinicie `AegisGuardSvc`.
+  4. Compruebe `/api/status`: `intelStatus` debe ser `verified:<versión>`, con `intelHashCount` y `yaraRuleCount` mayores que cero. Si aparece `rejected:...`, el servicio no cargó ninguna regla del paquete; revise la huella, la firma y los hashes antes de reintentar. Sin las dos variables, `intelStatus=bundled`.
+- El paquete solo se carga desde el directorio indicado y no se descarga de Internet. Un fichero `.yar` adicional colocado en ese directorio no se activa si no figura en el manifiesto.
 
 ## Rendimiento
 

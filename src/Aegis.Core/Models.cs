@@ -172,6 +172,10 @@ public sealed class RuntimeStatus
     public bool MonitorActive { get; set; }
     public bool EtwActive { get; set; }
     public bool FirewallActive { get; set; }
+    /// <summary>bundled, verified:versión o rejected:motivo.</summary>
+    public string IntelStatus { get; set; } = "starting";
+    public int IntelHashCount { get; set; }
+    public int YaraRuleCount { get; set; }
     public string ProtectionState { get; set; } = "starting";
     public DateTimeOffset StartedAt { get; set; }
     public double CpuPercent { get; set; }

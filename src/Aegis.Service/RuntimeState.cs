@@ -11,6 +11,9 @@ public sealed class RuntimeState
     public bool EtwActive { get; set; }
     public string ServiceName { get; set; } = "AegisGuardSvc";
     public bool ManagedByScm { get; set; }
+    public string IntelStatus { get; set; } = "bundled";
+    public int IntelHashCount { get; set; }
+    public int YaraRuleCount { get; set; }
 
     public long EventsTotal;
     public long ThreatsTotal;
@@ -92,6 +95,9 @@ public sealed class RuntimeState
             MonitorActive = MonitorActive,
             EtwActive = EtwActive,
             FirewallActive = firewallActive,
+            IntelStatus = IntelStatus,
+            IntelHashCount = IntelHashCount,
+            YaraRuleCount = YaraRuleCount,
             ProtectionState = state,
             StartedAt = StartedAt,
             CpuPercent = Math.Round(cpu, 2),

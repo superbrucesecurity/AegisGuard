@@ -47,10 +47,47 @@ var app = builder.Build();
 var rulesDir = Environment.GetEnvironmentVariable("AEGIS_RULES_DIR");
 if (string.IsNullOrWhiteSpace(rulesDir)) rulesDir = Path.Combine(AppContext.BaseDirectory, "rules");
 var intel = app.Services.GetRequiredService<ThreatIntel>();
-intel.Load(Path.Combine(rulesDir, "threat-intel.json"));
-
 var yara = app.Services.GetRequiredService<YaraLiteEngine>();
-yara.LoadDirectory(rulesDir);
+
+// Un paquete firmado y verificado sustituye a las reglas incluidas. Sin la
+// huella de la clave fijada en el entorno no se carga ningún paquete externo.
+var trustedKeyHash = Environment.GetEnvironmentVariable("AEGIS_INTEL_KEY_SHA256");
+var packageDir = Environment.GetEnvironmentVariable("AEGIS_INTEL_PACKAGE_DIR");
+string? intelStatus;
+string? packageError = null;
+if (!string.IsNullOrWhiteSpace(trustedKeyHash) && !string.IsNullOrWhiteSpace(packageDir) &&
+    IntelPackage.TryVerify(packageDir, out var package, out packageError))
+{
+    var keyFile = Path.Combine(packageDir, IntelPackage.PublicKeyFileName);
+    var keyDocument = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(keyFile));
+    var actualKeyHash = keyDocument.GetProperty("sha256").GetString();
+    if (string.Equals(actualKeyHash, trustedKeyHash, StringComparison.OrdinalIgnoreCase))
+    {
+        intel.Load(Path.Combine(packageDir, IntelPackage.IntelFileName));
+        // Solo se cargan reglas incluidas en el manifiesto: un fichero extra
+        // colocado en el directorio no amplía la inteligencia activa.
+        yara.LoadFiles(package!.Files
+            .Where(f => f.Path.EndsWith(".yar", StringComparison.OrdinalIgnoreCase) ||
+                        f.Path.EndsWith(".yara", StringComparison.OrdinalIgnoreCase))
+            .Select(f => Path.Combine(packageDir, f.Path)));
+        intelStatus = $"verified:{package.Version}";
+    }
+    else intelStatus = "rejected:untrusted-key";
+}
+else if (!string.IsNullOrWhiteSpace(trustedKeyHash) || !string.IsNullOrWhiteSpace(packageDir))
+{
+    intelStatus = $"rejected:{packageError ?? "missing-package"}";
+}
+else
+{
+    intel.Load(Path.Combine(rulesDir, IntelPackage.IntelFileName));
+    yara.LoadDirectory(rulesDir);
+    intelStatus = "bundled";
+}
+var runtime = app.Services.GetRequiredService<RuntimeState>();
+runtime.IntelStatus = intelStatus;
+runtime.IntelHashCount = intel.HashCount;
+runtime.YaraRuleCount = yara.RuleCount;
 
 var store = app.Services.GetRequiredService<EventStore>();
 await store.InitializeAsync();

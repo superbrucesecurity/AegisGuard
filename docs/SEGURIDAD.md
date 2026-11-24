@@ -41,6 +41,18 @@ Los códigos se mapean a estados verificables: `SignedTrusted`, `Unsigned`, `Sig
 - Si el fichero cambia entre la lectura inicial y la verificación final se registra `ANALYSIS-CONTENT-CHANGED`; la decisión no se presenta como fiable. La cuarentena vuelve a calcular el hash antes de mover el archivo.
 - Los contenedores cifrados o ilegibles y los streams VBA no interpretados se marcan como `UNVERIFIED`, nunca como malware ni como limpios.
 
+## Paquetes de inteligencia firmados
+
+La actualización de inteligencia es manual y opcional. `deploy/Build-IntelPackage.ps1` firma un manifiesto con ECDSA P-256 sobre curva `nistP256` y genera:
+
+- `manifest.json`: versión, fecha y lista `path`/`sha256` de los ficheros incluidos.
+- `manifest.sig`: firma Base64 del manifiesto.
+- `public-key.json`: coordenadas `x`/`y` y su propio `sha256`.
+
+El servicio exige dos variables para usar el paquete: `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256` (SHA-256 de `x || y`). Sin ambas variables ignora el paquete y carga solo las reglas incluidas (`bundled`). Con ellas, rechaza el paquete completo si falla la firma, la huella de la clave, la forma del manifiesto o cualquiera de los hashes; no aplica una carga parcial. `rejected:motivo` se publica en `/api/status` y la UI lo muestra como inteligencia no íntegra.
+
+La clave privada es material de firma del publicador y no debe copiarse al equipo destino ni versionarse. La cadena de confianza es la huella fijada por el administrador: un atacante que reemplace el paquete por otro firmado por una clave distinta no puede cargarlo. No hay URLs, descargas ni decisiones remotas. Los streams VBA en mini-FAT y los contenedores cifrados siguen marcándose como no verificados.
+
 ## Colas y visibilidad
 
 Las observaciones críticas (canarios, manipulación de manifiesto, C2, reutilización de PID, saturación) usan una cola prioritaria drenada antes que la normal. La coalescencia se aplica después de registrar el primer evento: los duplicados incrementan `coalescedEvents` pero **no** `droppedEvents`, porque no hay pérdida de visibilidad. Solo los descartes reales (cola llena, `DropOldest`, watcher en error) elevan el estado a `degraded`. Si un `FileSystemWatcher` informa de error, se marca degradación, se descarta y se recrea; la pérdida nunca se oculta como protección completa.

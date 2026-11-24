@@ -12,6 +12,7 @@ Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
     ├── DecisionEngine + RemediationPolicy (deterministas, 100 % local)
     ├── FileInspector → YaraLite / PeInspector / ScriptInspector / ArchiveInspector / MacroInspector
     ├── ThreatIntel / LocalReputation (reputación persistida con checksum)
+    ├── IntelPackage (manifiesto ECDSA-P256 + hashes, opcional y sin red)
     ├── QuarantineManager (AES-GCM + DPAPI)
     ├── FirewallManager (WFP COM)
     ├── EventStore (JSONL)
@@ -28,7 +29,7 @@ En las instalaciones gestionadas, `Aegis.Service.exe` se ejecuta como servicio S
 2. **Enriquecimiento**: una sola lectura acotada produce hash SHA-256, tamaño, coincidencia EICAR (incluso partida entre lecturas) y un prefijo para los analizadores. Sobre esa copia se aplican firma WinTrust por ruta, YARA-lite, `PeInspector`, `ScriptInspector`, `ArchiveInspector` y `MacroInspector`. Los contenedores se leen en memoria con topes declarados antes de descomprimir; nunca se extraen a disco. `ProcessStarted` conserva PID + tiempo de creación para detectar reutilización antes de atribuir evidencia.
 3. **Decisión local**: `LocalAssessment` produce score, evidencias y criticalidad. La reputación se lee de `reputation.json` y se actualiza tras la decisión con corroboración. `DecisionEngine` calcula riesgo, confianza, severidad y veredicto con `risk = local.Score`. Las razones incluyen analizador y evidencia, no solo el nombre de la regla.
 4. **Remediación**: la regla WFP por aplicación se resuelve antes de mover el archivo; cuarentena reversible solo para rutas seguras; bloqueo WFP solo con veredicto `Block`/`Quarantine`; modo aprendizaje registra conexiones sin bloquear. `Block` y `Quarantine` se contabilizan por separado.
-5. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl`, reputación en `reputation.json` (con suma SHA-256 y escritura atómica), todo bajo `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`). Las reglas se leen de `%AEGIS_RULES_DIR%` (por defecto el directorio `rules` del servicio).
+5. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl`, reputación en `reputation.json` (con suma SHA-256 y escritura atómica), todo bajo `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`). Las reglas se leen de `%AEGIS_RULES_DIR%` (por defecto el directorio `rules` del servicio) o, si se configuran `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256`, de un paquete local verificado.
 
 El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el resultado. La prueba EICAR (`POST /api/selftest/eicar`) reutiliza el enriquecimiento y la decisión, pero no escribe eventos ni aplica remediación: crea una muestra en `%AEGIS_DATA_DIR%\selftest`, la analiza y la elimina. Si otro producto retira el archivo, se informa del bloqueo externo en lugar de fingir un resultado.
 
@@ -53,5 +54,5 @@ El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el 
 - La RAM en reposo medida durante 20 s tras la Fase 3 fue de 81,8 MB de media y 84,6 MB de máximo; la CPU media fue del 0,25 % con un pico puntual del 2 %, sin eventos descartados. Es una compilación Debug y una medición sin escaneos activos. Ver [benchmarks](BENCHMARKS.md).
 - La reputación se persiste localmente en `reputation.json`, pero no es una lista global ni remota: solo refleja decisiones tomadas en este equipo. Un fichero corrupto se ignora y se reconstruye.
 - Los analizadores de comprimidos tienen topes explícitos (64 MiB de archivo, 2048 entradas, 32 MiB por miembro, 128 MiB totales, profundidad 3). No se analizan 7z/RAR. El lector OLE no interpreta streams en mini-FAT y los marca como no verificados.
-- No hay canal de actualización automática de firmas. Cualquier mecanismo futuro debe verificar firma digital y hash, y ser opcional.
+- No hay canal de actualización automática ni descarga de firmas. El mecanismo opcional `deploy/Build-IntelPackage.ps1` produce un paquete local con firma ECDSA P-256; el servicio solo lo carga si la huella de su clave coincide con `AEGIS_INTEL_KEY_SHA256` y todos los hashes del manifiesto validan. `/api/status` informa de `intelStatus`, `intelHashCount` y `yaraRuleCount`.
 - Las listas de dominios/IP de `threat-intel.json` se entregan vacías en esta versión: las reglas y el hash EICAR son la base usable de detección.

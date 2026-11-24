@@ -168,6 +168,8 @@
       ['Sin pérdida de eventos', (s.droppedEvents || 0) === 0 && !s.queueSaturated && !s.watchersDegraded,
         (s.droppedEvents || 0) === 0 && !s.queueSaturated && !s.watchersDegraded ? 'good' : 'warn'],
       ['Motor local', s.monitorActive, 'good'],
+      ['Inteligencia', (s.intelStatus === 'bundled' || String(s.intelStatus || '').startsWith('verified:')),
+        (s.intelStatus === 'bundled' || String(s.intelStatus || '').startsWith('verified:')) ? 'good' : 'warn'],
       ['Modo aprendizaje', !!s.policy?.learningMode, 'warn']
     ];
     $('#heroTags').innerHTML = tags.map(([label, ok, cls]) =>
@@ -186,6 +188,8 @@
       ['Firewall de Windows disponible', s.firewallActive],
       ['Servicio automático del sistema', !!s.managedByScm,
         s.managedByScm ? 'Registrado en el SCM' : 'Ejecución manual; use finish.cmd para registrarlo'],
+      ['Inteligencia local íntegra', s.intelStatus === 'bundled' || String(s.intelStatus || '').startsWith('verified:'),
+        `Fuentes: ${s.intelStatus || 'sin cargar'} · hashes ${number(s.intelHashCount || 0)} · reglas ${number(s.yaraRuleCount || 0)}`],
       ['Eventos observados', (s.eventsTotal || 0) > 0],
       ['Sin pérdida de visibilidad', (s.droppedEvents || 0) === 0 && !s.watchersDegraded && !s.queueSaturated,
         'Se descartaron eventos o un watcher dejó de informar'],

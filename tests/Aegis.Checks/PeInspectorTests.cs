@@ -59,6 +59,19 @@ public sealed class PeInspectorTests
         Assert.Contains(matches, m => m.RuleId == "PE-LARGE-OVERLAY");
     }
 
+    [Fact]
+    public void PePrefixIsCappedAtTheDeclaredLimit()
+    {
+        var image = BuildPe(0x60000020, AnalysisLimits.MaxPeBytes);
+
+        var matches = Inspector.Analyze(image, image.Length);
+
+        var incomplete = Assert.Single(matches, m => m.RuleId == "PE-ANALYSIS-INCOMPLETE");
+        Assert.Equal(Severity.Info, incomplete.Severity);
+        Assert.Contains(incomplete.Evidence, e => e.Contains(AnalysisLimits.MaxPeBytes.ToString(), StringComparison.Ordinal));
+        Assert.DoesNotContain(matches, m => m.Severity == Severity.Critical);
+    }
+
     private static byte[] BuildPe(uint sectionCharacteristics, int overlayBytes = 0)
     {
         const int peOffset = 0x80;

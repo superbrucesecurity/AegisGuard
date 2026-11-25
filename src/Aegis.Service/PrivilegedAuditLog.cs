@@ -6,36 +6,58 @@ namespace Aegis.Service;
 
 /// <summary>
 /// Registro local, con ACL restringida, de todos los intentos de operación
-/// privilegiada, incluidos los rechazados. No sustituye al registro de eventos
-/// del producto: es la evidencia de la superficie administrativa.
+/// privilegiada, incluidos los rechazados y los que fallan antes del parseo.
+/// No sustituye al registro de eventos del producto: es la evidencia de la
+/// superficie administrativa.
 /// </summary>
 public sealed class PrivilegedAuditLog
 {
     private const long MaxBytes = 2 * 1024 * 1024;
     private readonly string _path;
     private readonly object _gate = new();
+    private readonly ILogger? _logger;
 
-    public PrivilegedAuditLog(string root)
+    public PrivilegedAuditLog(string root, ILogger? logger = null)
     {
         Directory.CreateDirectory(root);
         _path = Path.Combine(root, "privileged-audit.jsonl");
+        _logger = logger;
         if (OperatingSystem.IsWindows() && File.Exists(_path)) LocalFileAcl.Restrict(_path);
     }
 
-    public void Write(ClientIdentity identity, PrivilegedOperation operation, bool allowed, string detail)
+    public void Write(ClientIdentity identity, PrivilegedOperation operation, bool allowed, string detail) =>
+        WriteEntry(operation.ToString(), allowed, detail, identity.ProcessId, identity.Sid,
+            identity.IntegrityName, identity.Elevation.ToString());
+
+    public void WriteValidation(
+        string operation,
+        bool allowed,
+        string detail,
+        int? processId = null,
+        string? sid = null,
+        string? integrity = null,
+        string? elevation = null) =>
+        WriteEntry(operation, allowed, detail, processId, sid, integrity, elevation);
+
+    private void WriteEntry(
+        string operation,
+        bool allowed,
+        string detail,
+        int? processId,
+        string? sid,
+        string? integrity,
+        string? elevation)
     {
         var line = JsonSerializer.Serialize(new
         {
             utc = DateTimeOffset.UtcNow.ToString("O"),
-            operation = operation.ToString(),
+            operation,
             allowed,
             detail,
-            pid = identity.ProcessId,
-            sid = identity.Sid,
-            integrity = identity.IntegrityName,
-            elevation = identity.Elevation.ToString(),
-            administrator = identity.IsAdministrator,
-            interactive = identity.IsInteractive
+            pid = processId,
+            sid,
+            integrity,
+            elevation
         }, JsonDefaults.Options);
 
         lock (_gate)
@@ -58,7 +80,8 @@ public sealed class PrivilegedAuditLog
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // La auditoría no puede impedir la operación ya autorizada, pero
-                // el servicio registra el fallo en el registro de eventos de Windows.
+                // el fallo debe quedar en el registro de eventos del producto.
+                _logger?.LogError(ex, "No se pudo escribir la auditoría IPC en {Path}", _path);
             }
         }
     }

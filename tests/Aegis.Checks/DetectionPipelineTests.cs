@@ -100,6 +100,7 @@ public sealed class DetectionPipelineTests
             await quarantine.InitializeAsync();
             var canary = new RansomwareCanary(root);
             canary.Initialize();
+            var correlation = new CorrelationEngine();
 
             var pipeline = new DetectionPipeline(
                 new YaraLiteEngine(),
@@ -110,7 +111,8 @@ public sealed class DetectionPipelineTests
                 reputation,
                 new FirewallManager(),
                 canary,
-                NullLogger<DetectionPipeline>.Instance);
+                NullLogger<DetectionPipeline>.Instance,
+                correlation);
 
             var threat = await pipeline.ScanPathReadOnlyAsync(file);
 
@@ -118,6 +120,15 @@ public sealed class DetectionPipelineTests
             Assert.Equal(64, threat.Observation.Sha256!.Length);
             Assert.Contains(threat.Observation.RuleMatches, m => m.Category == "script");
             Assert.NotEqual(Verdict.Allow, threat.Decision.Verdict);
+
+            // El informe es una proyección del análisis real y tampoco persiste.
+            Assert.NotNull(threat.Report);
+            Assert.Equal("1.0", threat.Report.SchemaVersion);
+            Assert.Contains(threat.Report.Analyzers,
+                a => a.Category == "script" && a.Ran && a.Findings.Any(f => f.Category == "script"));
+            Assert.Equal(threat.Decision.Local.Contributions.Count, threat.Report.Contributions.Count);
+            Assert.Equal(threat.Decision.Local.Score, threat.Report.Summary.Score);
+            Assert.True(threat.Report.Coverage.HashReconfirmed);
 
             // Ningún efecto secundario, aunque la política permita remediar.
             Assert.False(File.Exists(Path.Combine(root, "events.jsonl")));
@@ -130,6 +141,8 @@ public sealed class DetectionPipelineTests
             Assert.Equal(0, status.ThreatsTotal);
             Assert.Equal(0, status.BlockedTotal);
             Assert.Equal(0, status.QuarantinedTotal);
+            Assert.Equal(0, correlation.BufferedEvents);
+            Assert.Equal(0, correlation.KeyCount);
         }
         finally
         {

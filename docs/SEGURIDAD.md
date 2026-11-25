@@ -1,5 +1,7 @@
 # Seguridad y privacidad
 
+El modelo de amenazas, con severidades, evidencias y estado de corrección, está en [THREAT-MODEL.md](THREAT-MODEL.md).
+
 ## Sin credenciales externas
 
 El producto no usa claves de API, cuentas de usuario ni servicios de inferencia. No existen archivos de credenciales ni variables de entorno secretas. Toda la lógica de detección y decisión se ejecuta en el equipo.
@@ -7,15 +9,16 @@ El producto no usa claves de API, cuentas de usuario ni servicios de inferencia.
 ## Superficie HTTP y canal privilegiado
 
 - Ya no existe `ui-token`, `window.AEGIS_TOKEN` ni autenticación `Bearer`. La SPA no posee ninguna credencial que pueda ser leída por código inyectado en la página.
-- La API HTTP escucha solo en loopback y expone únicamente lecturas, estado y análisis. `POST /api/scan` y `POST /api/selftest/eicar` calculan la decisión con el motor real, pero no escriben historial, reputación ni contadores y no aplican remediación; las mutaciones pertenecen a la monitorización automática o al canal privilegiado. El middleware rechaza cualquier `Host` distinto de `127.0.0.1` / `localhost` / `[::1]`, así como cabeceras `Origin` o `Sec-Fetch-Site` que indiquen otro origen.
-- Las cinco mutaciones sensibles (reglas de firewall, restauración/purgado de cuarentena y cambio de política) no están registradas como rutas HTTP. Se atienden por una Named Pipe con DACL vacía inicial y accesos explícitos para SYSTEM, administradores y el SID del usuario autorizado; el nombre se deriva de ese SID y no es configurable.
-- El servicio identifica al proceso cliente desde el kernel de Windows: `GetNamedPipeClientProcessId`, apertura de su token y lectura de `TokenUser`, `TokenIntegrityLevel` y `TokenElevationType`. Comprueba también pertenencia a Administradores e Interactivo mediante `CheckTokenMembership` sobre una copia de suplantación. El payload no puede declarar ni alterar estos atributos.
-- Se exige elevación completa (`TokenElevationType.Full`), integridad alta y sesión interactiva para cualquier operación sensible. Un token limitado por UAC, un proceso en segundo plano o un cliente de integridad media se rechazan aunque el SID pertenezca a Administradores.
-- Si la UI no está elevada, solicita consentimiento UAC relanzándose con `runas`. El nombre de la tubería se calcula desde `AEGIS_UI_USER_SID`, registrado por el instalador, y se pasa al proceso elevado: si UAC pide credenciales de otra cuenta, no cambia la ruta. El archivo de respuesta se crea con una ACL que solo permite al usuario solicitante original y al proceso elevado; no se reutiliza un archivo preexistente.
-- `PrivilegedIpcDispatcher` rechaza reglas `Allow`: solo se crean reglas de bloqueo con prefijo `AEGIS Guard`. No hay forma de conceder tráfico desde la interfaz ni desde HTTP.
-- Cada solicitud y cada rechazo se registran en `privileged-audit.jsonl` con PID, SID, integridad, elevación y motivo. El registro se rota a 2 MiB y conserva ACL restringida.
-- Límites: 64 KiB por solicitud, 256 KiB por respuesta y una solicitud por conexión, cerrada después de responder.
-- CSP restrictiva, `X-Frame-Options: DENY`, `nosniff` y `no-referrer`.
+- El servicio HTTP escucha solo en loopback y publica **únicamente** los archivos estáticos de la interfaz y `/healthz` (`ok`, sin estado interno). No hay rutas `/api/*`: ni lecturas, ni análisis, ni mutaciones. Un `POST`, `PUT` o `DELETE` a cualquier ruta devuelve `405`; un `GET` a `/api/status` devuelve el `index.html` estático, nunca datos del producto. El middleware rechaza cualquier `Host` distinto de `127.0.0.1` / `localhost` / `[::1]`, así como cabeceras `Origin` o `Sec-Fetch-Site` que indiquen otro origen.
+- Toda la información que muestra la interfaz (estado, eventos, amenazas, cuarentena, firewall, política) y los análisis (`ScanPath`, `SelftestEicar`) se solicitan al objeto nativo `aegis`, que los atiende por una Named Pipe. `ScanPath` calcula la decisión con el motor real sin escribir historial, reputación ni contadores y sin remediar. Sólo acepta ficheros dentro de los directorios permitidos por la instalación (perfil del usuario, temporales y `AEGIS_SCAN_ALLOWED_ROOTS`); rechaza el directorio de estado `%AEGIS_DATA_DIR%`, las rutas del sistema y cualquier `junction`/reparse point.
+- Las cinco mutaciones sensibles (reglas de firewall, restauración/purgado de cuarentena y cambio de política) exigen además una elevación UAC real. La Named Pipe tiene una DACL vacía inicial con accesos explícitos sólo para SYSTEM y el SID fijado por el instalador en `AEGIS_UI_USER_SID`: no hay ACE para `InteractiveSid` ni para el grupo de administradores. Si la variable falta o no es un SID válido, el servicio gestionado por SCM no abre el canal. El nombre se deriva de ese SID y no es configurable.
+- El servicio identifica al proceso cliente desde el kernel de Windows: `GetNamedPipeClientProcessId`, apertura de su token y lectura de `TokenUser`, `TokenIntegrityLevel` y `TokenElevationType`. Comprueba también pertenencia a Administradores e Interactivo mediante `CheckTokenMembership` sobre una copia de suplantación. El SID leído del token debe coincidir con el de la instalación. El payload no puede declarar ni alterar estos atributos.
+- Las lecturas y los análisis se autorizan por SID del usuario instalado, sesión interactiva e integridad media o superior. Las mutaciones exigen elevación completa (`TokenElevationType.Full`), integridad alta y pertenencia a Administradores. Un token limitado, un proceso en segundo plano, un cliente de integridad baja o una cuenta administradora distinta se rechazan.
+- Si la UI no está elevada y la operación lo exige, solicita consentimiento UAC relanzándose con `runas`. El SID del pipe se pasa al proceso elevado, pero éste debe pertenecer al mismo usuario: una elevación con otra cuenta no amplía la autorización y falla de forma explícita. La respuesta se escribe en un directorio temporal privado al que se le aplica la DACL antes de crear el fichero; el llamante original sólo obtiene permiso de lectura. Los argumentos se pasan con `ArgumentList`, no por concatenación, y la espera tiene un límite de dos minutos.
+- `PrivilegedIpcDispatcher` rechaza reglas `Allow`: solo se crean reglas de bloqueo con prefijo `AEGIS Guard`. No hay forma de conceder tráfico desde la interfaz, la tubería ni HTTP.
+- Cada intento se registra en `privileged-audit.jsonl` con PID, SID, integridad, elevación y motivo, incluidos los fallos de identidad, trama vacía, JSON inválido, operación desconocida y timeouts. Si falla la escritura, el error se publica en el registro de eventos. El registro se rota a 2 MiB y conserva ACL restringida.
+- Límites: 64 KiB por solicitud, 256 KiB por respuesta, 10 s por conexión IPC (2 min para la elevación UAC), cuatro clientes simultáneos y dos análisis concurrentes. Un cliente que envíe una trama parcial no bloquea a los demás.
+- CSP restrictiva (sin `connect-src` a Internet), `X-Frame-Options: DENY`, `nosniff` y `no-referrer`.
 - WebView2 sin DevTools, menú contextual, autoguardado de contraseñas, autocompletado ni mensajería web. Se habilita un único host object (`aegis`) y la navegación queda fijada al extremo local compartido por servicio y UI (`http://127.0.0.1:8787`, o el puerto de `AEGIS_HTTP_PORT`).
 
 ## Servicio SCM y privilegios
@@ -40,6 +43,7 @@ Los códigos se mapean a estados verificables: `SignedTrusted`, `Unsigned`, `Sig
 - Los tamaños declarados de ZIP/TAR se comprueban **antes** de descomprimir; la descompresión es streaming y se aborta al superar el límite. Nunca se extraen ficheros a disco, evitando path traversal.
 - Una firma válida no exime del resto de analizadores; una firma ausente no es malware. Los scripts no se puntúan por "sin firma" porque WinTrust devuelve `NotApplicable` para esa extensión.
 - El análisis de PE, scripts, archivos y macros nunca genera por sí solo un indicador **verificado**. Solo EICAR y los hashes de la lista local lo son. La reputación requiere dos decisiones adversarias para considerarse muy baja.
+- La correlación temporal es derivada, en memoria y auditable: guarda los IDs de los eventos correlacionados, con cotas de 1024 PIDs, 6 eventos por PID, 10 minutos de TTL y 24 puntos máximos por observación. Nunca crea un indicador verificado ni bloquea por sí sola; si es la única señal, el riesgo se limita a `BlockThreshold - 1` y la confianza a 0,60. El escaneo manual y EICAR no la alimentan.
 - Si el fichero cambia entre la lectura inicial y la verificación final se registra `ANALYSIS-CONTENT-CHANGED`; la decisión no se presenta como fiable. La cuarentena vuelve a calcular el hash antes de mover el archivo.
 - Los contenedores cifrados o ilegibles y los streams VBA no interpretados se marcan como `UNVERIFIED`, nunca como malware ni como limpios.
 
@@ -51,9 +55,9 @@ La actualización de inteligencia es manual y opcional. `deploy/Build-IntelPacka
 - `manifest.sig`: firma Base64 del manifiesto.
 - `public-key.json`: coordenadas `x`/`y` y su propio `sha256`.
 
-El servicio exige dos variables para usar el paquete: `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256` (SHA-256 de `x || y`). Sin ambas variables ignora el paquete y carga solo las reglas incluidas (`bundled`). Con ellas, rechaza el paquete completo si falla la firma, la huella de la clave, la forma del manifiesto o cualquiera de los hashes; no aplica una carga parcial. `rejected:motivo` se publica en `/api/status` y la UI lo muestra como inteligencia no íntegra.
+El servicio exige dos variables para usar el paquete: `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256` (SHA-256 de `x || y`). Sin ambas variables ignora el paquete y carga solo las reglas incluidas (`bundled`). Con ellas, rechaza el paquete completo si falla la firma, la huella de la clave, la forma del manifiesto o cualquiera de los hashes; no aplica una carga parcial. `rejected:motivo` se publica en la operación IPC `Status` y la UI lo muestra como inteligencia no íntegra.
 
-La clave privada es material de firma del publicador y no debe copiarse al equipo destino ni versionarse. La cadena de confianza es la huella fijada por el administrador: un atacante que reemplace el paquete por otro firmado por una clave distinta no puede cargarlo. No hay URLs, descargas ni decisiones remotas. Los streams VBA en mini-FAT y los contenedores cifrados siguen marcándose como no verificados.
+La clave privada es material de firma del publicador y no debe copiarse al equipo destino ni versionarse: `.gitignore` excluye `*-signing-key.json` y `dev-key.json`, y `Check-Ci.ps1` verifica esos patrones. La cadena de confianza es la huella fijada por el administrador: un atacante que reemplace el paquete por otro firmado por una clave distinta no puede cargarlo. No hay URLs, descargas ni decisiones remotas. Los streams VBA en mini-FAT y los contenedores cifrados siguen marcándose como no verificados.
 
 ## Colas y visibilidad
 
@@ -70,7 +74,7 @@ Este HMAC detecta edición casual o corrupción, **no** resiste a un proceso con
 - Cifrado AES-GCM con nonce aleatorio por elemento.
 - Metadatos protegidos con DPAPI `LocalMachine`.
 - Validación estricta de ruta antes de cualquier movimiento; nunca se aceptan rutas relativas, raíces ni rutas del producto.
-- La restauración comprueba integridad y sobrescribe solo previa confirmación explícita.
+- La restauración comprueba integridad y nunca sobrescribe: si la ruta original vuelve a existir, la operación falla y el elemento permanece en cuarentena.
 - El purgado y la restauración retiran las reglas WFP huérfanas asociadas a la amenaza.
 
 ## Actualizaciones
@@ -83,5 +87,5 @@ La sustitución guarda la instalación anterior en `-BackupDir`, restringe su AC
 
 - No desactive Microsoft Defender, Bitdefender ni otro producto de seguridad para ejecutar las pruebas EICAR. Si **Ayuda → Ejecutar prueba EICAR** informa de que la muestra fue bloqueada antes del análisis, ese es el resultado: Aegis no la sustituye ni la presenta como detectada por su motor.
 - No exponga el puerto HTTP local (8787 por defecto, o `AEGIS_HTTP_PORT`) mediante reglas de firewall de entrada.
-- No definir `AEGIS_MONITOR_DISABLED=1` en una instalación real: deja los watchers, ETW y canarios sin iniciar y `/api/status` informa de `protectionState=degraded`. El estado `limited` se reserva para cuando falta el firewall de Windows. Solo se usa en el proceso aislado de `Check-Ci.ps1` para que la actividad del runner no se cuente como observación del motor.
+- No definir `AEGIS_MONITOR_DISABLED=1` en una instalación real: deja los watchers, ETW y canarios sin iniciar y la operación IPC `Status` informa de `protectionState=degraded`. El estado `limited` se reserva para cuando falta el firewall de Windows. Solo se usa en el proceso aislado de `Check-Ci.ps1` para que la actividad del runner no se cuente como observación del motor.
 - No interprete un veredicto `Allow` como garantía de inocuidad: es una decisión con umbrales locales, no una certificación.

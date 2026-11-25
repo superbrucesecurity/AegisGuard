@@ -17,13 +17,25 @@ public sealed class DecisionEngine
 
         var risk = Math.Clamp(local.Score, 0, 100);
         var reasons = new List<string>();
-        foreach (var c in local.Contributions.OrderByDescending(x => x.Weight).Take(4))
+        var shown = local.Contributions.OrderByDescending(x => x.Weight).Take(4).ToList();
+        // La correlación nunca debe quedar oculta por otras señales de mayor
+        // peso: es derivada, pero auditable y explicable en la decisión.
+        foreach (var correlation in local.Contributions.Where(c => c.Source == "correlation").Take(2))
+            if (!shown.Contains(correlation)) shown.Add(correlation);
+        foreach (var c in shown.OrderByDescending(x => x.Weight))
         {
             var evidence = string.IsNullOrWhiteSpace(c.Evidence) ? string.Empty : $" [{c.Evidence}]";
             reasons.Add($"{c.Source}: {c.Reason}{evidence} (+{c.Weight:0})");
         }
 
         var confidence = Math.Clamp(0.55 + local.EvidenceCount * 0.09, 0.55, 0.96);
+        // Salvaguarda anti-feedback: dos eventos correlacionados no son un
+        // indicio verificado y por sí solos no pueden crear un bloqueo.
+        if (local.Contributions.Count > 0 && local.Contributions.All(c => c.Source == "correlation"))
+        {
+            risk = Math.Min(risk, Math.Max(0, policy.BlockThreshold - 1));
+            confidence = Math.Min(confidence, 0.60);
+        }
         var verdict = VerdictFromRisk(risk, policy);
 
         // La evidencia crítica local manda por encima del modo aprendizaje y de
@@ -49,7 +61,11 @@ public sealed class DecisionEngine
         };
     }
 
-    public LocalAssessment Assess(Observation observation, IReadOnlyList<RuleMatch> ruleMatches, IReadOnlySet<string> maliciousHashes)
+    public LocalAssessment Assess(
+        Observation observation,
+        IReadOnlyList<RuleMatch> ruleMatches,
+        IReadOnlySet<string> maliciousHashes,
+        IReadOnlyList<CorrelationMatch>? correlations = null)
     {
         var assessment = new LocalAssessment();
         void Add(string source, string reason, double weight, bool critical = false, bool verified = false, string evidence = "")
@@ -125,8 +141,22 @@ public sealed class DecisionEngine
                 flag is "ransomware_canary_modified" or "canary_manifest_tampered");
         }
 
-        if (!string.IsNullOrWhiteSpace(observation.RemoteAddress) && IsPublicIp(observation.RemoteAddress))
+        if (!string.IsNullOrWhiteSpace(observation.RemoteAddress) && TelemetryAddress.IsPublicIp(observation.RemoteAddress))
             Add("network", "Conexión a IP pública", 6);
+
+        // Correlación derivada de eventos ya observados: se puntúa y se explica,
+        // pero nunca activa los indicadores críticos ni verificados.
+        if (correlations is { Count: > 0 })
+        {
+            assessment.Correlations = [.. correlations];
+            foreach (var match in correlations)
+            {
+                var evidence = string.Join("; ", match.Evidence.Select(e =>
+                    $"{e.ObservationId}/{e.Kind}/{string.Join(",", e.Details)}"));
+                if (evidence.Length > 240) evidence = evidence[..240] + "…";
+                Add("correlation", $"{match.RuleId}: {match.Reason}", match.Weight, evidence: evidence);
+            }
+        }
 
         assessment.Score = Math.Clamp(assessment.Score, 0, 100);
         return assessment;
@@ -160,32 +190,4 @@ public sealed class DecisionEngine
             "cpl" or "ocx" or "drv" or "ps1" or "bat" or "cmd" or "vbs" or "js" or "jse" or "hta";
     }
 
-    private static bool IsPublicIp(string value)
-    {
-        if (!System.Net.IPAddress.TryParse(value.Trim(), out var ip)) return false;
-        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
-        if (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.Any) ||
-            ip.Equals(System.Net.IPAddress.IPv6Any)) return false;
-
-        var b = ip.GetAddressBytes();
-        if (b.Length == 16)
-        {
-            if ((b[0] & 0xfe) == 0xfc) return false;           // fc00::/7 ULA
-            if (b[0] == 0xfe && (b[1] & 0xc0) == 0x80) return false; // fe80::/10
-            if (b[0] == 0xff) return false;                   // multicast
-            return true;
-        }
-
-        if (b[0] == 0 || b[0] >= 224 || b[0] == 127) return false;
-        if (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
-            (b[0] == 192 && b[1] == 168)) return false;
-        if (b[0] == 169 && b[1] == 254) return false;
-        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;
-        if (b[0] == 192 && b[1] == 0 && b[2] == 0) return false;
-        if (b[0] == 192 && b[1] == 0 && b[2] == 2) return false;        // TEST-NET-1
-        if (b[0] == 198 && (b[1] == 18 || b[1] == 19)) return false;
-        if (b[0] == 198 && b[1] == 51 && b[2] == 100) return false;     // TEST-NET-2
-        if (b[0] == 203 && b[1] == 0 && b[2] == 113) return false;      // TEST-NET-3
-        return true;
-    }
 }

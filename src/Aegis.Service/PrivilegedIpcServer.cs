@@ -17,16 +17,22 @@ public interface IPrivilegedOperationDispatcher
 }
 
 /// <summary>
-/// Servidor IPC con ACL explícita, identificación del cliente y autorización
-/// por operación. El token HTTP ya no concede acceso a operaciones sensibles.
+/// Servidor IPC local con ACL explícita, identificación real del cliente,
+/// autorización por SID y por operación, timeouts por conexión y auditoría de
+/// todos los intentos. Ninguna operación de la interfaz se sirve por HTTP.
 /// </summary>
 public sealed class PrivilegedIpcServer
 {
+    private const int MaxConcurrentClients = 4;
+    private static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(10);
+
     private readonly string _pipeName;
+    private readonly string _authorizedSid;
     private readonly IPrivilegedOperationDispatcher _dispatcher;
     private readonly PrivilegedAuditLog _audit;
     private readonly ILogger _logger;
     private readonly PipeSecurity _security;
+    private readonly SemaphoreSlim _slots = new(MaxConcurrentClients, MaxConcurrentClients);
 
     public PrivilegedIpcServer(
         string pipeName,
@@ -35,43 +41,94 @@ public sealed class PrivilegedIpcServer
         ILogger logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
+        _authorizedSid = AegisIpcNames.RequireConfiguredAuthorizedSid();
+        if (!string.Equals(pipeName, AegisIpcNames.PrivilegedPipe(_authorizedSid), StringComparison.Ordinal))
+            throw new InvalidOperationException("El nombre de la tubería no corresponde al SID autorizado por la instalación.");
         _pipeName = pipeName;
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _security = BuildSecurity();
+        _security = BuildSecurity(_authorizedSid);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        var loops = Enumerable.Range(0, MaxConcurrentClients)
+            .Select(_ => AcceptLoopAsync(cancellationToken))
+            .ToArray();
+        await Task.WhenAll(loops).ConfigureAwait(false);
+    }
+
+    private async Task AcceptLoopAsync(CancellationToken cancellationToken)
+    {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await using var server = NamedPipeServerStreamAcl.Create(
-                _pipeName,
-                PipeDirection.InOut,
-                NamedPipeServerStream.MaxAllowedServerInstances,
-                PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous | PipeOptions.WriteThrough,
-                4096,
-                PrivilegedOperationPolicy.MaxResponseBytes,
-                _security);
-
+            NamedPipeServerStream? server = null;
             try
             {
+                server = CreateServer();
                 await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-                await HandleAsync(server, cancellationToken).ConfigureAwait(false);
+                await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
+                var owned = server;
+                server = null;
+                _ = Task.Run(() => HandleClientAsync(owned, cancellationToken), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                server?.Dispose();
                 return;
             }
             catch (IOException ex)
             {
-                _logger.LogWarning(ex, "Conexión IPC privilegiada interrumpida.");
+                server?.Dispose();
+                _logger.LogWarning(ex, "Conexión IPC interrumpida antes de identificar al cliente.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error inesperado en el servidor IPC privilegiado.");
+                server?.Dispose();
+                _logger.LogError(ex, "Error inesperado aceptando una conexión IPC.");
+            }
+        }
+    }
+
+    private NamedPipeServerStream CreateServer() => NamedPipeServerStreamAcl.Create(
+        _pipeName,
+        PipeDirection.InOut,
+        MaxConcurrentClients,
+        PipeTransmissionMode.Byte,
+        PipeOptions.Asynchronous | PipeOptions.WriteThrough,
+        4096,
+        PrivilegedOperationPolicy.MaxResponseBytes,
+        _security);
+
+    private async Task HandleClientAsync(NamedPipeServerStream server, CancellationToken shutdownToken)
+    {
+        await using (server.ConfigureAwait(false))
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            timeout.CancelAfter(ClientTimeout);
+            try
+            {
+                await HandleAsync(server, timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested && !shutdownToken.IsCancellationRequested)
+            {
+                _audit.WriteValidation("timeout", false, "el cliente excedió el tiempo de la conexión");
+                try { await WriteAsync(server, IpcResponse.Failure("tiempo de conexión agotado"), CancellationToken.None); }
+                catch (IOException) { /* el cliente ya se desconectó */ }
+            }
+            catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+            {
+                // Apagado ordenado.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al atender una conexión IPC.");
+                _audit.WriteValidation("error", false, ex.Message);
+            }
+            finally
+            {
+                _slots.Release();
             }
         }
     }
@@ -79,64 +136,88 @@ public sealed class PrivilegedIpcServer
     private async Task HandleAsync(NamedPipeServerStream server, CancellationToken cancellationToken)
     {
         ClientIdentity? identity = null;
-        PrivilegedOperation? auditedOperation = null;
         try
         {
             identity = NativeClientIdentity.FromPipe(server.SafePipeHandle);
             if (identity is null)
             {
-                await WriteAsync(server, IpcResponse.Failure("no se pudo identificar al cliente")).ConfigureAwait(false);
+                _audit.WriteValidation("handshake", false, "no se pudo identificar al cliente");
+                await WriteAsync(server, IpcResponse.Failure("no se pudo identificar al cliente"), cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (!PrivilegedOperationPolicy.IsAuthorizedSid(identity, _authorizedSid))
+            {
+                _audit.WriteValidation("authorization", false,
+                    "el SID del cliente no es el usuario autorizado por la instalación",
+                    identity.ProcessId, identity.Sid, identity.IntegrityName, identity.Elevation.ToString());
+                await WriteAsync(server, IpcResponse.Failure("acceso denegado: identidad no autorizada"), cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             var frame = await ReadFrameAsync(server, cancellationToken).ConfigureAwait(false);
             if (frame is null)
             {
-                await WriteAsync(server, IpcResponse.Failure("solicitud vacía o demasiado grande")).ConfigureAwait(false);
+                _audit.WriteValidation("validation", false, "solicitud vacía o demasiado grande",
+                    identity.ProcessId, identity.Sid, identity.IntegrityName, identity.Elevation.ToString());
+                await WriteAsync(server, IpcResponse.Failure("solicitud vacía o demasiado grande"), cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             IpcRequest? request;
             try { request = JsonSerializer.Deserialize<IpcRequest>(frame, JsonDefaults.Options); }
             catch (JsonException) { request = null; }
-            var validationError = string.Empty;
-            if (request is null || !request.TryValidate(out validationError))
+            string requestError = string.Empty;
+            var validRequest = request is not null && request.TryValidate(out requestError);
+            string validationError;
+            if (validRequest)
             {
-                if (request is null) validationError = "solicitud JSON no válida";
-                await WriteAsync(server, IpcResponse.Failure(validationError)).ConfigureAwait(false);
+                validationError = string.Empty;
+            }
+            else
+            {
+                validationError = request is null ? "solicitud JSON no válida" : requestError;
+                _audit.WriteValidation("validation", false, validationError,
+                    identity.ProcessId, identity.Sid, identity.IntegrityName, identity.Elevation.ToString());
+                await WriteAsync(server, IpcResponse.Failure(validationError), cancellationToken).ConfigureAwait(false);
                 return;
             }
 
-            var operation = request.Operation!.Value;
-            auditedOperation = operation;
+            var operation = request!.Operation!.Value;
             var allowed = PrivilegedOperationPolicy.IsAllowed(identity, operation);
             var reason = allowed ? "autorizado" : PrivilegedOperationPolicy.DenialReason(identity, operation);
             _audit.Write(identity, operation, allowed, reason);
             _logger.LogInformation(
-                "IPC privilegiado {Operation} pid={Pid} integridad={Integrity} elevación={Elevation}: {Reason}",
+                "IPC {Operation} pid={Pid} integridad={Integrity} elevación={Elevation}: {Reason}",
                 operation, identity.ProcessId, identity.IntegrityName, identity.Elevation, reason);
 
             if (!allowed)
             {
-                await WriteAsync(server, IpcResponse.Failure("acceso denegado: " + reason)).ConfigureAwait(false);
+                await WriteAsync(server, IpcResponse.Failure("acceso denegado: " + reason), cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             var result = await _dispatcher
                 .DispatchAsync(operation, request.Payload, identity, cancellationToken)
                 .ConfigureAwait(false);
-            await WriteAsync(server, IpcResponse.Success(result)).ConfigureAwait(false);
+            await WriteAsync(server, IpcResponse.Success(result), cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
-            // Apagado ordenado.
+            // Mensajes controlados por el producto: permiten explicar al usuario
+            // por qué se rechazó una ruta o un elemento sin revelar el estado.
+            _audit.WriteValidation("validacion", false, ex.Message,
+                identity?.ProcessId, identity?.Sid, identity?.IntegrityName, identity?.Elevation.ToString());
+            try { await WriteAsync(server, IpcResponse.Failure(ex.Message), CancellationToken.None).ConfigureAwait(false); }
+            catch (IOException) { /* el cliente ya se desconectó */ }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al atender una operación IPC privilegiada.");
-            if (identity is not null && auditedOperation is not null)
-                _audit.Write(identity, auditedOperation.Value, false, "error: " + ex.Message);
-            try { await WriteAsync(server, IpcResponse.Failure("error interno")).ConfigureAwait(false); }
+            _logger.LogError(ex, "Error al ejecutar una operación IPC.");
+            if (identity is not null)
+                _audit.WriteValidation("error", false, ex.Message,
+                    identity.ProcessId, identity.Sid, identity.IntegrityName, identity.Elevation.ToString());
+            try { await WriteAsync(server, IpcResponse.Failure("error interno"), CancellationToken.None).ConfigureAwait(false); }
             catch (IOException) { /* el cliente ya se desconectó */ }
         }
     }
@@ -147,6 +228,7 @@ public sealed class PrivilegedIpcServer
         using var accumulated = new MemoryStream();
         while (accumulated.Length <= PrivilegedOperationPolicy.MaxRequestBytes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
             if (read == 0) break;
             accumulated.Write(buffer, 0, read);
@@ -163,41 +245,34 @@ public sealed class PrivilegedIpcServer
         return Encoding.UTF8.GetString(accumulated.ToArray()).Trim().TrimStart('\uFEFF').Trim();
     }
 
-    private static async Task WriteAsync(Stream stream, IpcResponse response)
+    private static async Task WriteAsync(Stream stream, IpcResponse response, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(response, JsonDefaults.Options);
         var bytes = new UTF8Encoding(false).GetBytes(json + "\n");
         if (bytes.Length > PrivilegedOperationPolicy.MaxResponseBytes)
             bytes = new UTF8Encoding(false).GetBytes(
                 JsonSerializer.Serialize(IpcResponse.Failure("respuesta demasiado grande"), JsonDefaults.Options) + "\n");
-        await stream.WriteAsync(bytes, CancellationToken.None).ConfigureAwait(false);
-        await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+        await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static PipeSecurity BuildSecurity()
+    /// <summary>
+    /// Sólo SYSTEM y el usuario autorizado por la instalación pueden abrir la
+    /// tubería. No se concede acceso a Interactive ni a cualquier administrador:
+    /// la elevación con otra cuenta no amplía la autorización.
+    /// </summary>
+    public static PipeSecurity BuildSecurity(string authorizedSid)
     {
         var security = new PipeSecurity();
-        // Se parte de una DACL vacía: sólo se conceden los accesos explícitos.
         security.SetSecurityDescriptorSddlForm("D:");
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
         security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            new SecurityIdentifier(authorizedSid),
             PipeAccessRights.ReadWrite,
             AccessControlType.Allow));
-
-        var uiSid = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
-        SecurityIdentifier interactive;
-        if (!string.IsNullOrWhiteSpace(uiSid))
-        {
-            try { interactive = new SecurityIdentifier(uiSid); }
-            catch (ArgumentException) { interactive = new SecurityIdentifier(WellKnownSidType.InteractiveSid, null); }
-        }
-        else interactive = new SecurityIdentifier(WellKnownSidType.InteractiveSid, null);
-
-        security.AddAccessRule(new PipeAccessRule(interactive, PipeAccessRights.ReadWrite, AccessControlType.Allow));
         return security;
     }
 }

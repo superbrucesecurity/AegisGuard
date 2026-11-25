@@ -21,6 +21,7 @@ public sealed class DetectionPipeline
     private readonly LocalReputation _reputation;
     private readonly FirewallManager _firewall;
     private readonly RansomwareCanary _canary;
+    private readonly CorrelationEngine _correlation;
     private readonly ILogger<DetectionPipeline> _logger;
     private readonly ConcurrentDictionary<string, int> _learnedConnections = new();
 
@@ -33,8 +34,10 @@ public sealed class DetectionPipeline
         LocalReputation reputation,
         FirewallManager firewall,
         RansomwareCanary canary,
-        ILogger<DetectionPipeline> logger)
+        ILogger<DetectionPipeline> logger,
+        CorrelationEngine? correlation = null)
     {
+        _correlation = correlation ?? new CorrelationEngine();
         _yara = yara;
         _intel = intel;
         _quarantine = quarantine;
@@ -53,7 +56,7 @@ public sealed class DetectionPipeline
     public async Task<ThreatRecord> ProcessAsync(Observation observation, CancellationToken ct = default)
     {
         var policy = _state.GetPolicy();
-        var decision = await EvaluateAsync(observation, ct).ConfigureAwait(false);
+        var decision = await EvaluateAsync(observation, recordCorrelation: true, ct).ConfigureAwait(false);
 
         await _store.AppendAsync(observation).ConfigureAwait(false);
 
@@ -76,14 +79,20 @@ public sealed class DetectionPipeline
     /// remediación. La usa la prueba EICAR para verificar la detección sin
     /// contaminar el historial ni poner en cuarentena el fichero de prueba.
     /// </summary>
-    private async Task<DecisionResult> EvaluateAsync(Observation observation, CancellationToken ct)
+    private async Task<DecisionResult> EvaluateAsync(
+        Observation observation, bool recordCorrelation, CancellationToken ct)
     {
         var ruleMatches = new List<RuleMatch>(observation.RuleMatches);
         await EnrichAsync(observation, ruleMatches, ct).ConfigureAwait(false);
         // La observación persistida (y la UI) debe mostrar la evidencia real
         // producida por todos los analizadores, no solo la del watcher.
         observation.RuleMatches = [.. ruleMatches];
-        var local = _decision.Assess(observation, ruleMatches, _intel.SnapshotHashes());
+        // Las variantes de solo evaluación (escaneo manual y EICAR) no alimentan
+        // la memoria de correlación: un usuario no puede influir en eventos futuros.
+        var correlations = recordCorrelation
+            ? _correlation.Observe(observation)
+            : [];
+        var local = _decision.Assess(observation, ruleMatches, _intel.SnapshotHashes(), correlations);
         return _decision.Decide(observation, local, _state.GetPolicy());
     }
 
@@ -119,7 +128,7 @@ public sealed class DetectionPipeline
                 FileExtension = ".txt",
                 Source = "selftest"
             };
-            var decision = await EvaluateAsync(observation, ct).ConfigureAwait(false);
+            var decision = await EvaluateAsync(observation, recordCorrelation: false, ct).ConfigureAwait(false);
             var detected = decision.Local.HasVerifiedIndicator && decision.Verdict != Verdict.Allow;
             if (!detected && decision.Local.EvidenceCount == 0)
                 return new SelfTestResult
@@ -167,9 +176,14 @@ public sealed class DetectionPipeline
     /// </summary>
     public async Task<ThreatRecord> ScanPathReadOnlyAsync(string path, CancellationToken ct = default)
     {
+        var elapsed = Stopwatch.StartNew();
         var observation = ManualObservation(path);
-        var decision = await EvaluateAsync(observation, ct).ConfigureAwait(false);
-        return new ThreatRecord { Observation = observation, Decision = decision };
+        var decision = await EvaluateAsync(observation, recordCorrelation: false, ct).ConfigureAwait(false);
+        var threat = new ThreatRecord { Observation = observation, Decision = decision };
+        // El informe es una proyección en memoria de la evidencia ya calculada.
+        // No escribe historial, reputación ni contadores.
+        threat.Report = ScanReportBuilder.Build(threat, elapsed.ElapsedMilliseconds);
+        return threat;
     }
 
     private static Observation ManualObservation(string path)

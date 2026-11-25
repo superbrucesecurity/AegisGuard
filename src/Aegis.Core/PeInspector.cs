@@ -45,6 +45,17 @@ public sealed class PeInspector
         if (data.Length < 2 || ReadUInt16(data, 0) != DosMagic)
             return [];
 
+        // El tope de cabeceras/tablas PE se aplica aquí, no sólo se declara en
+        // AnalysisLimits. El prefijo puede ser mayor (8 MiB) y no debe dar a
+        // entender que se recorrieron todas las secciones disponibles.
+        if (data.Length > AnalysisLimits.MaxPeBytes)
+        {
+            var availableBytes = data.Length;
+            Add("PE-ANALYSIS-INCOMPLETE", "Análisis PE limitado por el tope de cabeceras", Severity.Info,
+                $"prefijo={AnalysisLimits.MaxPeBytes}, disponible={availableBytes}");
+            data = data[..AnalysisLimits.MaxPeBytes];
+        }
+
         if (data.Length < 0x40)
         {
             Add("PE-MALFORMED-HEADER", "Cabecera PE incompleta o desplazada", Severity.Low,

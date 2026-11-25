@@ -4,23 +4,21 @@
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8787/healthz
-Invoke-RestMethod http://127.0.0.1:8787/api/health
-Invoke-RestMethod http://127.0.0.1:8787/api/status
 ```
 
-El puerto por defecto es `8787`. Si se define `AEGIS_HTTP_PORT`, el servicio y la UI usan ese valor de forma coherente; modifique las URLs anteriores en consecuencia.
+El puerto por defecto es `8787`. Si se define `AEGIS_HTTP_PORT`, el servicio y la UI usan ese valor de forma coherente; modifique la URL anterior en consecuencia. El servicio HTTP ya no publica rutas `/api/*`: el estado y el resto de operaciones se consultan desde la interfaz o por la Named Pipe local (ver `deploy/Check-Ci.ps1`, función `Invoke-Ipc`). No hay token local ni cabeceras `Bearer`.
 
-`healthz` es público y solo confirma que el proceso responde; las rutas `/api` no exigen credenciales porque solo devuelven lecturas y análisis. No hay token local ni cabeceras `Bearer`. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección. `intelStatus` distingue `bundled`, `verified:<versión>` y `rejected:<motivo>`; un paquete rechazado no cambia por sí solo el estado de monitorización, pero deja la inteligencia opcional sin cargar y debe corregirse.
+`healthz` es público y solo confirma que el proceso responde. En la operación IPC `Status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección. `intelStatus` distingue `bundled`, `verified:<versión>` y `rejected:<motivo>`; un paquete rechazado no cambia por sí solo el estado de monitorización, pero deja la inteligencia opcional sin cargar y debe corregirse.
 
 El servicio se registra con `sc.exe create ... start= auto`, `binPath` directo al ejecutable y acciones de recuperación `restart/5000`, `restart/10000`, `restart/30000`. No usa `schtasks /SC ONLOGON`: el inicio no depende de que haya sesión. El evento de arranque y el apagado ordenado se escriben en el registro de eventos de Windows con el proveedor del nombre del servicio. `run-service.cmd` solo se conserva para diagnóstico manual.
 
 El acceso directo a `%AEGIS_DATA_DIR%` está restringido a SYSTEM, administradores y la cuenta de servicio; la UI interactiva no tiene permisos sobre ese árbol. Al arrancar se reparan las ACL heredadas de instalaciones anteriores, incluidas clave de canarios, configuración, reputación, historial y cuarentena.
 
-Los cambios de política se hacen desde la interfaz: WebView2 llama al objeto `aegis`, se solicita consentimiento UAC si hace falta y la operación `PolicyChange` llega al servicio por Named Pipe. El servicio valida la política, la persiste y aplica `maxEvents` en caliente sin reiniciar. `PUT /api/settings` ya no existe. Todos los intentos, autorizados o rechazados, quedan en `%AEGIS_DATA_DIR%\privileged-audit.jsonl`; revise ese archivo si una operación administrativa falla. Para diagnosticar la elevación, compruebe que la cuenta usada sea administrador real (no un token limitado) y que la sesión sea interactiva.
+Los cambios de política se hacen desde la interfaz: WebView2 llama al objeto `aegis`, se solicita consentimiento UAC si hace falta y la operación `PolicyChange` llega al servicio por Named Pipe. El servicio valida la política, la persiste y aplica `maxEvents` en caliente sin reiniciar. Ya no existen rutas HTTP `/api/*`. Todos los intentos, autorizados o rechazados, quedan en `%AEGIS_DATA_DIR%\privileged-audit.jsonl`; revise ese archivo si una operación administrativa falla. Para diagnosticar la elevación, compruebe que la cuenta usada sea el SID instalado, administrador real (no un token limitado) y que la sesión sea interactiva; una elevación con otra cuenta administradora se rechaza.
 
 ## Verificación continua
 
-El repositorio ejecuta en GitHub Actions (`windows-latest`, .NET 10): restore, build Release, tests y `deploy/Check-Ci.ps1`. El mismo script se puede ejecutar localmente:
+El repositorio ejecuta en GitHub Actions (`windows-latest`, .NET SDK 10.0.404 fijado, `timeout-minutes: 20`): restore, build Debug y Release, tests y `deploy/Check-Ci.ps1`. El mismo script se puede ejecutar localmente:
 
 ```powershell
 dotnet build AegisGuard.slnx -c Release --nologo
@@ -28,7 +26,7 @@ dotnet test tests/Aegis.Checks/Aegis.Checks.csproj -c Release --no-build --nolog
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Check-Ci.ps1
 ```
 
-`Check-Ci.ps1` valida la sintaxis de los scripts de despliegue, regenera y compara SBOM/avisos, crea una etapa sin firmar con `Setup-Aegis.ps1 -StageOnly` y comprueba VERSION, scripts copiados, SPA publicada y ausencia de `ui-token`. Después arranca el servicio desde esa etapa con un directorio de estado aislado, un puerto de loopback libre (`AEGIS_HTTP_PORT`), los sensores desactivados solo en ese proceso (`AEGIS_MONITOR_DISABLED=1`; el motor de análisis sigue siendo el real) y un `TEMP` vacío. Así evita que la actividad del runner se registre como observación y verifica que `POST /api/scan` no crea `events.jsonl`, `threats.jsonl` ni `reputation.json` y no cambia contadores, cuarentena ni reglas. No firma, no instala de forma persistente y no publica nada. La auditoría previa a una posible apertura de licencia está en [P1-LICENCIAS.md](P1-LICENCIAS.md).
+`Check-Ci.ps1` valida la sintaxis de los scripts de despliegue, regenera y compara SBOM/avisos, crea una etapa sin firmar con `Setup-Aegis.ps1 -StageOnly` y comprueba VERSION, scripts copiados, SPA publicada y ausencia de `ui-token`. Después arranca el servicio desde esa etapa con un directorio de estado aislado, un puerto de loopback libre (`AEGIS_HTTP_PORT`), los sensores desactivados solo en ese proceso (`AEGIS_MONITOR_DISABLED=1`; el motor de análisis sigue siendo el real) y un `TEMP` vacío. Así evita que la actividad del runner se registre como observación y verifica que la operación IPC `ScanPath` no crea `events.jsonl`, `threats.jsonl` ni `reputation.json`, no cambia contadores, cuarentena ni reglas, rechaza rutas del directorio de estado y que HTTP devuelve `405` a cualquier `POST`. No firma, no instala de forma persistente y no publica nada. La auditoría previa a una posible apertura de licencia está en [P1-LICENCIAS.md](P1-LICENCIAS.md).
 
 ## Validación aislada del instalador
 
@@ -40,7 +38,7 @@ $iso = Join-Path $env:TEMP 'aegis-install-smoke'
 .\deploy\finish.cmd "$iso\Program" "$iso\AegisGuard" AegisSmoke "Aegis Smoke" AegisSmokeSvc
 # Opcional: añada [INTELPACKAGEDIR] e [INTELKEYHASH] como argumentos sexto y séptimo
 # para registrar un paquete firmado; si se omiten, se usan las variables de entorno.
-# finish.cmd crea e inicia el servicio: comprobar Get-Service, /api/status y eventos.
+# finish.cmd crea e inicia el servicio: comprobar Get-Service, /healthz, la UI y eventos.
 .\deploy\uninstall.cmd -InstallDir "$iso\Program" -DataDir "$iso\AegisGuard" -TaskPrefix AegisSmoke -ServiceName AegisSmokeSvc -Yes
 ```
 
@@ -129,7 +127,7 @@ Prueba aislada con certificado autofirmado temporal: se generaron los tres artef
 
 `deploy/Generate-Sbom.ps1` genera `SBOM.spdx.json` (SPDX 2.3) y `THIRD-PARTY-NOTICES.md` a partir de `dotnet list package --include-transitive --format json` y de los `.nuspec` reales de la caché NuGet. El instalador copia ambos archivos, `LICENSE`, `EULA-EVALUATION.md`, `VERSION` y los textos de licencias de terceros (`licenses/`) al directorio de instalación.
 
-- `Directory.Build.props` es la única fuente del número `3.0.1`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. No hay versiones duplicadas en los scripts.
+- `Directory.Build.props` es la única fuente del número `3.0.1`: ensamblados, operación IPC `Health`, documentación y el archivo `VERSION` instalado leen ese valor. No hay versiones duplicadas en los scripts.
 - `LICENSE` declara el código propietario, con todos los derechos reservados. `EULA-EVALUATION.md` concede una licencia limitada, no transferible y revocable para evaluar el paquete firmado sin fines comerciales; prohíbe distribuirlo, revenderlo, comercializarlo y modificar el código o los binarios sin acuerdo escrito. El código se publica únicamente para transparencia y verificación. Las dependencias conservan sus propias licencias; consulte `THIRD-PARTY-NOTICES.md`.
 - Para regenerar el SBOM después de cambiar dependencias: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Generate-Sbom.ps1`. Revise el diff: las entradas `NOASSERTION` requieren revisión manual del paquete.
 - `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME] [INTELPACKAGEDIR] [INTELKEYHASH]` acepta opcionalmente el paquete firmado de la Fase 4. Si no se pasan los argumentos, se usan las variables de entorno `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256`. `Register-Service.ps1` exige ambas o ninguna y valida el SHA-256 de 64 hexadecimales antes de escribirlas en el entorno del SCM.
@@ -145,7 +143,7 @@ Prueba aislada con certificado autofirmado temporal: se generaron los tres artef
 
 ## Ajustes recomendados
 
-- Mantenga `learningMode` activo unos días en equipos nuevos y revise `/api/firewall/learned`. En este modo no se aplican cuarentena ni bloqueo automáticos, salvo indicios verificados localmente.
+- Mantenga `learningMode` activo unos días en equipos nuevos y revise la vista *Firewall* de la interfaz (operación IPC `FirewallLearned`). En este modo no se aplican cuarentena ni bloqueo automáticos, salvo indicios verificados localmente.
 - `autoQuarantine` y `autoBlockNetwork` deben permanecer activos solo después de calibrar umbrales con datos propios.
 - No baje `blockThreshold` por debajo de 50 sin pruebas de falsos positivos.
 
@@ -163,9 +161,9 @@ Prueba aislada con certificado autofirmado temporal: se generaron los tres artef
 - Sintaxis admitida: cadenas y hexadecimal con `??`, modificadores `nocase`/`wide`, meta `severity`/`description`/`sha256`, condiciones `all/any/N of them` (con listas y paréntesis), `filesize`, `uint16/32()` y `hash.sha256`.
 - No hay descarga de firmas. Opcionalmente se puede aplicar un paquete local firmado:
   1. Genere una clave ECDSA P-256 de publicación fuera del equipo destino; guárdela como JSON con `algorithm`, `d`, `x` e `y` en hexadecimal y no la incluya en el producto.
-  2. Ejecute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Build-IntelPackage.ps1 -SigningKeyPath <clave.json> -OutputPath <paquete> -Version <versión>`. El script imprime la huella que debe fijarse como `AEGIS_INTEL_KEY_SHA256`.
+  2. Ejecute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Build-IntelPackage.ps1 -SigningKeyPath <clave.json> -OutputPath <paquete> -Version <versión>`. `<clave.json>` contiene `d`, `x` e `y`; es material privado del publicador, se mantiene fuera del repositorio y del equipo destino (`.gitignore` cubre `*-signing-key.json` y `dev-key.json`). El script imprime la huella que debe fijarse como `AEGIS_INTEL_KEY_SHA256`.
   3. Copie el paquete al equipo y configure `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256` para el servicio; reinicie `AegisGuardSvc`.
-  4. Compruebe `/api/status`: `intelStatus` debe ser `verified:<versión>`, con `intelHashCount` y `yaraRuleCount` mayores que cero. Si aparece `rejected:...`, el servicio no cargó ninguna regla del paquete; revise la huella, la firma y los hashes antes de reintentar. Sin las dos variables, `intelStatus=bundled`.
+  4. Compruebe la operación IPC `Status`: `intelStatus` debe ser `verified:<versión>`, con `intelHashCount` y `yaraRuleCount` mayores que cero. Si aparece `rejected:...`, el servicio no cargó ninguna regla del paquete; revise la huella, la firma y los hashes antes de reintentar. Sin las dos variables, `intelStatus=bundled`.
 - El paquete solo se carga desde el directorio indicado y no se descarga de Internet. Un fichero `.yar` adicional colocado en ese directorio no se activa si no figura en el manifiesto.
 
 ## Rendimiento
@@ -182,7 +180,7 @@ Medición de 20 s con 24 núcleos lógicos, monitorización y WFP activos, compi
 
 ## Respuesta a incidentes
 
-1. Exporte el historial desde la UI (**Historial → Exportar JSON**): recorre todas las páginas de `/api/events?limit=1000&skip=N` y genera un JSON con `exportedAt`, `count` y `events`; la tabla solo muestra 200 eventos por rendimiento. También puede consumir `/api/events` y `/api/threats` (ambos admiten `limit`, `skip` y `severity`; `/api/events` también admite `verdict`).
-2. Identifique el `observationId` y revise `decision.reasons`.
+1. Exporte el historial desde la UI (**Historial → Exportar JSON**): recorre todas las páginas de la operación IPC `Events` con `limit=1000` y `skip=N` y genera un JSON con `exportedAt`, `count` y `events`; la tabla solo muestra 200 eventos por rendimiento. Las operaciones IPC `Events` y `Threats` admiten `limit`, `skip` y `severity`; `Events` también admite `verdict`.
+2. Identifique el `observationId` y revise `decision.reasons`. Si hay correlación, `decision.local.correlations[].evidence` identifica los dos eventos (IDs, tipo, marca de tiempo y PID/dirección/flag) que la provocaron; su peso aparece como contribución `correlation` y no equivale a un indicio verificado. En un análisis manual, el panel **Análisis** muestra el informe con cobertura, estado por analizador y contribuciones; `ran:false` o cobertura incompleta no significa "limpio".
 3. Restaure desde cuarentena solo tras verificar el fichero fuera del equipo.
 4. Si un veredicto fue erróneo, ajuste umbrales o añada una excepción; no desactive el motor globalmente.

@@ -72,15 +72,17 @@ public static class PrivilegedOperationPolicy
     public const int MaxRequestBytes = 64 * 1024;
     public const int MaxResponseBytes = 256 * 1024;
 
-    public static ClientClearance Required(PrivilegedOperation operation) => operation switch
-    {
-        PrivilegedOperation.FirewallAddRule => ClientClearance.Elevated,
-        PrivilegedOperation.FirewallRemoveRule => ClientClearance.Elevated,
-        PrivilegedOperation.QuarantineRestore => ClientClearance.Elevated,
-        PrivilegedOperation.QuarantinePurge => ClientClearance.Elevated,
-        PrivilegedOperation.PolicyChange => ClientClearance.Elevated,
-        _ => ClientClearance.Elevated
-    };
+    public static ClientClearance Required(PrivilegedOperation operation) =>
+        operation.RequiresElevation() ? ClientClearance.Elevated : ClientClearance.Standard;
+
+    /// <summary>
+    /// Una cuenta elevada distinta no hereda autorización: la identidad debe
+    /// coincidir con el SID fijado por la instalación. No se confía en un SID
+    /// enviado por el cliente ni en el nombre de la tubería como secreto.
+    /// </summary>
+    public static bool IsAuthorizedSid(ClientIdentity identity, string authorizedSid) =>
+        !string.IsNullOrWhiteSpace(authorizedSid) &&
+        string.Equals(identity.Sid, authorizedSid, StringComparison.OrdinalIgnoreCase);
 
     public static bool IsAllowed(ClientIdentity identity, PrivilegedOperation operation)
     {

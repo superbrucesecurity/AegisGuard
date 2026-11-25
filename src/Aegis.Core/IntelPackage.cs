@@ -29,14 +29,29 @@ public sealed class IntelPackage
     public List<ManifestEntry> Files { get; set; } = [];
 
     /// <summary>
-    /// Valida la firma del manifiesto, la clave pública y todos los ficheros
-    /// incluidos. Devuelve false sin lanzar excepción ante cualquier alteración.
-    /// Los ficheros no listados se ignoran: no amplían la inteligencia activa.
+    /// Valida firma, clave, ficheros y, si se indica, la huella fijada de la
+    /// clave. Sin pin se comprueba únicamente la integridad interna del paquete.
     /// </summary>
-    public static bool TryVerify(string directory, out IntelPackage? package, out string error)
+    public static bool TryVerify(string directory, out IntelPackage? package, out string error) =>
+        TryVerify(directory, null, out package, out error);
+
+    /// <summary>
+    /// Valida la firma del manifiesto, la clave pública, todos los ficheros
+    /// incluidos y la huella de clave configurada por el administrador. Devuelve
+    /// false sin lanzar excepción ante cualquier alteración. Los ficheros no
+    /// listados se ignoran: no amplían la inteligencia activa.
+    /// </summary>
+    public static bool TryVerify(string directory, string? expectedKeyHash,
+        out IntelPackage? package, out string error)
     {
         package = null;
         error = string.Empty;
+        if (!string.IsNullOrWhiteSpace(expectedKeyHash) &&
+            (expectedKeyHash.Length != 64 || expectedKeyHash.Any(c => !Uri.IsHexDigit(c))))
+        {
+            error = "huella de clave configurada no válida";
+            return false;
+        }
         try
         {
             var manifestPath = Path.Combine(directory, ManifestFileName);
@@ -70,6 +85,12 @@ public sealed class IntelPackage
             if (!string.Equals(keyHash, keyDocument.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 error = "checksum de clave pública no coincide";
+                return false;
+            }
+            if (!string.IsNullOrWhiteSpace(expectedKeyHash) &&
+                !string.Equals(keyHash, expectedKeyHash, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "clave pública no fijada por el administrador";
                 return false;
             }
 

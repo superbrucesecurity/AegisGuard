@@ -4,7 +4,8 @@ param(
     [string]$TargetDir,
     [string]$ManifestPath,
     [string]$ExpectedSignerSha256,
-    [switch]$AllowUntrustedTestSigner
+    [switch]$AllowUntrustedTestSigner,
+    [switch]$AllowUnpinnedSigner
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,7 +81,13 @@ $manifestSigner = $manifest.signerCertificateSha256.ToLowerInvariant()
 
 $expected = $ExpectedSignerSha256
 if ([string]::IsNullOrWhiteSpace($expected)) { $expected = $env:AEGIS_RELEASE_SIGNER_SHA256 }
-if (-not [string]::IsNullOrWhiteSpace($expected)) {
+if ([string]::IsNullOrWhiteSpace($expected)) {
+    if (-not $AllowUnpinnedSigner) {
+        throw 'No se fijó la huella SHA-256 del firmante. Pase -ExpectedSignerSha256 o defina AEGIS_RELEASE_SIGNER_SHA256; solo se permite omitirla con -AllowUnpinnedSigner en laboratorio.'
+    }
+    Write-Warning 'Modo laboratorio: no se aplica key pinning externo; no instale este paquete en producción.'
+}
+else {
     if ($expected -notmatch '^[0-9a-fA-F]{64}$') { throw 'ExpectedSignerSha256 no es un SHA-256 válido.' }
     if ($expected.ToLowerInvariant() -ne $manifestSigner) {
         throw "El certificado del paquete ($manifestSigner) no coincide con la huella fijada ($($expected.ToLowerInvariant()))."
@@ -104,6 +111,14 @@ if ($acceptedStatuses -notcontains $stampSignature.Status) {
 if ($null -eq $stampSignature.SignerCertificate) { throw 'El sello del manifiesto no tiene certificado firmante.' }
 if ((Get-CertificateSha256 $stampSignature.SignerCertificate) -ne $manifestSigner) {
     throw 'El sello del manifiesto fue firmado por otro certificado.'
+}
+if ($manifest.PSObject.Properties.Name -contains 'requiredSignerThumbprint') {
+    $requiredThumb = ([string]$manifest.requiredSignerThumbprint).Replace(' ', '').ToUpperInvariant()
+    if ($requiredThumb -notmatch '^[0-9A-F]{40}$') { throw 'requiredSignerThumbprint del manifiesto no es una huella SHA-1 válida.' }
+    $actualThumb = $stampSignature.SignerCertificate.Thumbprint.ToUpperInvariant()
+    if ($requiredThumb -ne $actualThumb) {
+        throw "requiredSignerThumbprint ($requiredThumb) no coincide con el certificado que firmó el manifiesto ($actualThumb)."
+    }
 }
 $stampHashes = @(Get-Content -LiteralPath $stampPath |
     Where-Object { $_ -match '^# sha256:([0-9a-fA-F]{64})$' } | ForEach-Object { $Matches[1].ToLowerInvariant() })

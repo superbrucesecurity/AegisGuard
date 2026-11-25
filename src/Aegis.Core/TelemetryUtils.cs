@@ -49,6 +49,40 @@ public static class TelemetryAddress
             return numeric.ToString(CultureInfo.InvariantCulture);
         return null;
     }
+
+    /// <summary>
+    /// Clasificación determinista de IP pública compartida por la decisión y la
+    /// correlación. Loopback, privadas, link-local, ULA y redes de documentación
+    /// no cuentan como destino público.
+    /// </summary>
+    public static bool IsPublicIp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !IPAddress.TryParse(value.Trim(), out var ip)) return false;
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any)) return false;
+
+        var b = ip.GetAddressBytes();
+        if (b.Length == 16)
+        {
+            if ((b[0] & 0xfe) == 0xfc) return false;           // fc00::/7 ULA
+            if (b[0] == 0xfe && (b[1] & 0xc0) == 0x80) return false; // fe80::/10
+            if (b[0] == 0xff) return false;                   // multicast
+            return true;
+        }
+
+        if (b[0] == 0 || b[0] >= 224 || b[0] == 127) return false;
+        if (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
+            (b[0] == 192 && b[1] == 168)) return false;
+        if (b[0] == 169 && b[1] == 254) return false;
+        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;
+        if (b[0] == 192 && b[1] == 0 && b[2] == 0) return false;
+        if (b[0] == 192 && b[1] == 0 && b[2] == 2) return false;        // TEST-NET-1
+        if (b[0] == 198 && (b[1] == 18 || b[1] == 19)) return false;
+        if (b[0] == 198 && b[1] == 51 && b[2] == 100) return false;     // TEST-NET-2
+        if (b[0] == 203 && b[1] == 0 && b[2] == 113) return false;      // TEST-NET-3
+        return true;
+    }
 }
 
 /// <summary>

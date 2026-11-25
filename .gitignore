@@ -23,6 +23,10 @@ config.json
 *.pem
 *.snk
 
+## Clave privada de firma del paquete de inteligencia (insumo local)
+*-signing-key.json
+dev-key.json
+
 ## Datos de ejecución
 events.jsonl
 threats.jsonl

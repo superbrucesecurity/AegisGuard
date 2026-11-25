@@ -78,11 +78,29 @@ public sealed class RuleMatch
     public string Category { get; set; } = "yara";
 }
 
+public sealed class CorrelationEvidence
+{
+    public string ObservationId { get; set; } = string.Empty;
+    public DateTimeOffset Timestamp { get; set; }
+    public EventKind Kind { get; set; }
+    public string Subject { get; set; } = string.Empty;
+    public List<string> Details { get; set; } = [];
+}
+
+public sealed class CorrelationMatch
+{
+    public string RuleId { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public double Weight { get; set; }
+    public List<CorrelationEvidence> Evidence { get; set; } = [];
+}
+
 public sealed class LocalAssessment
 {
     public double Score { get; set; }
     public int EvidenceCount { get; set; }
     public List<ScoreContribution> Contributions { get; set; } = [];
+    public List<CorrelationMatch> Correlations { get; set; } = [];
     public bool HasCriticalIndicator { get; set; }
     public bool HasVerifiedIndicator { get; set; }
 }
@@ -117,6 +135,9 @@ public sealed class ThreatRecord
     public DecisionResult Decision { get; set; } = new();
     public bool Remediated { get; set; }
     public string? RemediationDetail { get; set; }
+
+    /// <summary>Informe acotado del análisis manual; no se persiste.</summary>
+    public ScanReport? Report { get; set; }
 }
 
 public sealed class QuarantineItem

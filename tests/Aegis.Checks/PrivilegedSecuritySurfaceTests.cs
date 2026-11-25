@@ -24,17 +24,17 @@ public class PrivilegedSecuritySurfaceTests
         File.ReadAllText(Path.Combine(new[] { RepoRoot() }.Concat(parts).ToArray()));
 
     [Fact]
-    public void LaApiHttpNoContieneTokenNiMutacionesSensibles()
+    public void LaApiHttpSoloPublicaEstaticosYHealth()
     {
         var program = Read("src", "Aegis.Service", "Program.cs");
         Assert.DoesNotContain("ApiTokenProvider", program);
         Assert.DoesNotContain("Authorization", program);
-        Assert.DoesNotContain("MapPost(\"/api/quarantine", program);
-        Assert.DoesNotContain("MapDelete(\"/api/quarantine", program);
-        Assert.DoesNotContain("MapPost(\"/api/firewall/rules", program);
-        Assert.DoesNotContain("MapDelete(\"/api/firewall/rules/", program);
-        Assert.DoesNotContain("MapPut(\"/api/settings", program);
-        Assert.Contains("ScanPathReadOnlyAsync", program);
+        Assert.DoesNotContain("MapGet(\"/api/", program);
+        Assert.DoesNotContain("MapPost(\"/api/", program);
+        Assert.DoesNotContain("MapPut(\"/api/", program);
+        Assert.DoesNotContain("MapDelete(\"/api/", program);
+        Assert.Contains("MapGet(\"/healthz\"", program);
+        Assert.Contains("PrivilegedIpcDispatcher", program);
         Assert.DoesNotContain("pipeline.ScanPathAsync", program);
     }
 
@@ -46,6 +46,7 @@ public class PrivilegedSecuritySurfaceTests
         Assert.DoesNotContain("Bearer", script);
         Assert.DoesNotContain("authRefreshPending", script);
         Assert.Contains("privilegedCall", script);
+        Assert.DoesNotContain("fetch(", script);
     }
 
     [Fact]

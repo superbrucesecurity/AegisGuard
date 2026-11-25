@@ -140,19 +140,19 @@ if (-not $service -or $service.Status -ne 'Running') {
     throw "El servicio $ServiceName no alcanzo el estado Running."
 }
 
-# Ya no hay credenciales de archivo: la comprobación usa los endpoints sin
-# autenticación que solo confirman que el proceso responde.
+# Ya no hay credenciales de archivo: /healthz solo confirma que el proceso
+# responde, sin exponer estado ni operaciones.
 $health = $null
 for ($i = 0; $i -lt 20; $i++) {
     try {
-        $health = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -TimeoutSec 2
+        $health = Invoke-RestMethod 'http://127.0.0.1:8787/healthz' -TimeoutSec 2
         break
     } catch {
         Start-Sleep -Milliseconds 500
     }
 }
-if (-not $health) {
-    throw 'El servicio responde pero /api/health no devolvio una respuesta valida.'
+if ("$health" -ne 'ok') {
+    throw 'El servicio responde pero /healthz no devolvio una respuesta valida.'
 }
 
 [pscustomobject]@{

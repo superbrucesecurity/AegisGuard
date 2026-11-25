@@ -36,5 +36,27 @@ public static class AegisIpcNames
         return "aegis-console";
     }
 
+    /// <summary>
+    /// SID que el servicio exige para atender la tubería. A diferencia de
+    /// AuthorizedUserSid(), no admite el fallback al usuario actual: un servicio
+    /// gestionado por SCM debe tener el SID del usuario autorizado escrito por
+    /// el instalador. Tampoco concede acceso a todo el grupo Interactive.
+    /// </summary>
+    public static string RequireConfiguredAuthorizedSid()
+    {
+        var configured = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
+        if (string.IsNullOrWhiteSpace(configured))
+            throw new InvalidOperationException("AEGIS_UI_USER_SID no está configurado; el canal IPC no puede iniciarse.");
+        if (!OperatingSystem.IsWindows()) return configured;
+        try
+        {
+            return new SecurityIdentifier(configured).Value;
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException("AEGIS_UI_USER_SID no es un SID válido; el canal IPC no puede iniciarse.", ex);
+        }
+    }
+
     public static string PrivilegedPipeForAuthorizedUser() => PrivilegedPipe(AuthorizedUserSid());
 }

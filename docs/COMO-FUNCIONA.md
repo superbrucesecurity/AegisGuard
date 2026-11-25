@@ -52,13 +52,13 @@ Cada observación se enriquece con señales que no salen del equipo:
 
 Las banderas que el monitor no produce se ignoran: no puntúan capacidades no implementadas. `Aegis.Core` contiene estas primitivas; `DetectionPipeline` orquesta el flujo. No existe telemetría saliente: las observaciones solo se escriben en `events.jsonl` / `threats.jsonl`.
 
-Las reglas pueden venir del juego incluido con el binario o de un paquete local firmado: el manifiesto se verifica con ECDSA P-256, la clave pública se fija mediante `AEGIS_INTEL_KEY_SHA256` y cada fichero se comprueba por SHA-256 antes de cargarse. Si algo cambia, no se carga nada del paquete y `/api/status` indica `rejected:<motivo>`. No hay descarga ni decisión remota.
+Las reglas pueden venir del juego incluido con el binario o de un paquete local firmado: `IntelPackage.TryVerify` comprueba la firma ECDSA P-256 del manifiesto, el checksum de la clave pública, **el pin de `AEGIS_INTEL_KEY_SHA256` dentro de la propia verificación** y cada fichero por SHA-256 antes de cargarse. Si algo cambia, no se carga nada del paquete y la operación IPC `Status` indica `rejected:<motivo>`. No hay descarga ni decisión remota.
 
-Cada evidencia lleva un `RuleId`, un analizador y una cadena verificable. Por ejemplo, una sección ejecutable y escribible aparece en las razones como `pe: PE-WRITABLE-EXECUTABLE-SECTION: … [.text (0xE0000020)] (+22)`. Al terminar el análisis se recalcula el hash para detectar que el fichero cambió mientras se inspeccionaba. Los contenedores cifrados o no interpretables se muestran como no verificados, no como limpios.
+Cada evidencia lleva un `RuleId`, un analizador y una cadena verificable. Por ejemplo, una sección ejecutable y escribible aparece en las razones como `pe: PE-WRITABLE-EXECUTABLE-SECTION: … [.text (0xE0000020)] (+22)`. El inspector PE aplica el tope de 1 MiB de `AnalysisLimits.MaxPeBytes` y marca `PE-ANALYSIS-INCOMPLETE` si el prefijo disponible es mayor; no presenta un análisis truncado como completo. Al terminar el análisis se recalcula el hash para detectar que el fichero cambió mientras se inspeccionaba. Los contenedores cifrados o no interpretables se muestran como no verificados, no como limpios.
 
 ## 3. Decisión determinista local
 
-`DecisionEngine` usa únicamente la evidencia local. El riesgo es el score de `LocalAssessment` (hash, reglas, firma, reputación, banderas e IP pública), sin ponderaciones externas:
+`DecisionEngine` usa únicamente la evidencia local. El riesgo es el score de `LocalAssessment` (hash, reglas, firma, reputación, banderas, IP pública y correlación temporal acotada), sin ponderaciones externas:
 
 | Veredicto | Umbral por defecto | Acción |
 | --- | --- | --- |
@@ -69,17 +69,21 @@ Cada evidencia lleva un `RuleId`, un analizador y una cadena verificable. Por ej
 
 Un indicador crítico local en un fichero (hash en lista de denegación o regla crítica) fuerza cuarentena; si la cuarentena está desactivada, degrada a bloqueo en lugar de permitir la amenaza. Las reglas duplicadas se cuentan una sola vez para no inflar el riesgo. Los umbrales se validan para permanecer ordenados por debajo de 100.
 
+La correlación temporal sólo une eventos ya observados: un proceso iniciado con señales de ejecución temporal o padre inusual seguido, en 120 s, de una conexión a IP pública/`c2_beacon`, o en 300 s de persistencia en el registro con el mismo PID. Cada coincidencia vale 12 puntos, se dispara una vez por proceso y deja en `decision.local.correlations[].evidence` los IDs, tipos y marcas de tiempo de los dos eventos. Es memoria volátil del servicio: no se lee el historial, no se inventa el PID de la persistencia y, si es la única evidencia, el riesgo queda por debajo del umbral de bloqueo y la confianza se limita a 0,60. El análisis manual y la prueba EICAR no alimentan esta memoria.
+
+En la vista **Análisis**, el resultado incluye un informe acotado: cobertura del hash/contenedor, estado de cada analizador ( ejecutado o no ejecutado y motivo), hallazgos con su analizador y contribuciones al score. Un analizador que no aplica por extensión o una cobertura incompleta se muestra explícitamente; no se afirma que un fichero sea inocuo cuando no se pudo inspeccionar por completo.
+
 En modo aprendizaje las decisiones se registran, pero no se aplican cuarentena ni bloqueo WFP automáticos. Los indicios verificados localmente (hash en lista de denegación o regla EICAR) se siguen aplicando para no desarmar la protección básica.
 
 ## 4. Remediación
 
-- **Firewall WFP:** usa COM `HNetCfg.FwPolicy2` para crear reglas con prefijo `AEGIS Guard`, auditables y eliminables. `GET /api/firewall/stats` distingue reglas automáticas (creadas por un hallazgo) de manuales; el panel muestra el total de reglas activas, no un recuento de paquetes bloqueados. No hay driver de callout: no inspecciona tráfico en tiempo real ni bloquea conexiones anteriores a la regla.
+- **Firewall WFP:** usa COM `HNetCfg.FwPolicy2` para crear reglas con prefijo `AEGIS Guard`, auditables y eliminables. La operación IPC `FirewallStats` distingue reglas automáticas (creadas por un hallazgo) de manuales; el panel muestra el total de reglas activas, no un recuento de paquetes bloqueados. No hay driver de callout: no inspecciona tráfico en tiempo real ni bloquea conexiones anteriores a la regla.
 - **Cuarentena:** AES-GCM con clave protegida por DPAPI. El fichero se puede restaurar desde la UI; el purgado definitivo es explícito.
-- **Modo aprendizaje:** registra las conexiones nuevas en `/api/firewall/learned` para revisión y omite la remediación automática, salvo indicios verificados.
+- **Modo aprendizaje:** registra las conexiones nuevas en la operación IPC `FirewallLearned` para revisión y omite la remediación automática, salvo indicios verificados.
 
-## 5. Interfaz y API
+## 5. Interfaz y canal local
 
-La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). No hay token local ni credenciales inyectadas en la página: las rutas `/api` solo sirven lecturas y análisis en `127.0.0.1`, y `/healthz` es público. Para restaurar/purgar cuarentena, gestionar reglas o cambiar la política, WebView2 llama al objeto nativo `aegis`, que solicita elevación UAC y habla con el servicio por Named Pipe. El servicio verifica el PID, el SID, la integridad y el tipo de elevación del proceso cliente antes de actuar, y registra cada intento.
+La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). No hay token local ni credenciales inyectadas en la página: el HTTP local solo sirve archivos estáticos y `/healthz`. Todos los datos y análisis se piden al objeto nativo `aegis`, que habla con el servicio por Named Pipe; las cinco mutaciones (reglas, cuarentena y política) requieren además elevación UAC del usuario instalado. El servicio verifica el PID, el SID, la integridad y el tipo de elevación del proceso cliente antes de actuar, y registra cada intento.
 
 Los datos mostrados son reales: no hay valores de ejemplo ni controles decorativos.
 

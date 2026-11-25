@@ -1,13 +1,15 @@
 [CmdletBinding()]
 param(
     [string]$OutputPath,
-    [string]$NoticePath
+    [string]$NoticePath,
+    [string]$LicenseDir
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $root 'SBOM.spdx.json' }
 if ([string]::IsNullOrWhiteSpace($NoticePath)) { $NoticePath = Join-Path $root 'THIRD-PARTY-NOTICES.md' }
+if ([string]::IsNullOrWhiteSpace($LicenseDir)) { $LicenseDir = Join-Path $root 'licenses' }
 
 $props = Get-Content -LiteralPath (Join-Path $root 'Directory.Build.props') -Raw
 if ($props -notmatch '<Version>([^<]+)</Version>') { throw 'No se encontró <Version> en Directory.Build.props.' }
@@ -54,9 +56,8 @@ function Copy-LicenseFile([string]$Id, [string]$Version) {
         if (-not $node -or $node.type -ne 'file' -or -not $node.'#text') { return }
         $source = Join-Path $packageDir $node.'#text'
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { return }
-        $licensesDir = Join-Path $root 'licenses'
-        New-Item -ItemType Directory -Force -Path $licensesDir | Out-Null
-        Copy-Item -LiteralPath $source -Destination (Join-Path $licensesDir ($Id + '-' + $Version + '.txt')) -Force
+        New-Item -ItemType Directory -Force -Path $LicenseDir | Out-Null
+        Copy-Item -LiteralPath $source -Destination (Join-Path $LicenseDir ($Id + '-' + $Version + '.txt')) -Force
     } catch { return }
 }
 
@@ -120,7 +121,7 @@ foreach ($project in $list.projects) {
                 relatedSpdxElement = if ($isTest) { $productId } else { $spdxId }
                 relationshipType = if ($isTest) { 'DEV_DEPENDENCY_OF' } else { 'DEPENDS_ON' }
             }
-            $licenseFile = Join-Path (Join-Path $root 'licenses') ($package.id + '-' + $package.version + '.txt')
+            $licenseFile = Join-Path $LicenseDir ($package.id + '-' + $package.version + '.txt')
             $noticeRows += [pscustomobject]@{
                 Package = $package.id
                 Version = $package.version

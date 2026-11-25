@@ -6,6 +6,7 @@ param(
     [string]$ServiceName = 'AegisGuardSvc',
     [string]$ExpectedSignerSha256,
     [switch]$AllowUntrustedTestSigner,
+    [switch]$AllowUnpinnedSigner,
     [switch]$SkipVerify,
     [switch]$Yes
 )
@@ -59,7 +60,7 @@ if (-not $SkipVerify) {
     }
     if ([string]::IsNullOrWhiteSpace($ExpectedSignerSha256)) { $ExpectedSignerSha256 = $env:AEGIS_RELEASE_SIGNER_SHA256 }
     try {
-        & (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $BackupDir -ManifestPath $manifest -ExpectedSignerSha256 $ExpectedSignerSha256 -AllowUntrustedTestSigner:$AllowUntrustedTestSigner
+        & (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $BackupDir -ManifestPath $manifest -ExpectedSignerSha256 $ExpectedSignerSha256 -AllowUntrustedTestSigner:$AllowUntrustedTestSigner -AllowUnpinnedSigner:$AllowUnpinnedSigner
         if (-not $?) { throw 'Verify-Release.ps1 devolvió un error.' }
     }
     catch { throw "El backup no superó la verificación; no se restauró. $($_.Exception.Message)" }

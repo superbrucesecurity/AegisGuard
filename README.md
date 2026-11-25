@@ -4,6 +4,8 @@ Antivirus y cortafuegos local para Windows construido con .NET nativo y WebView2
 
 Repositorio público: `https://github.com/superbrucesecurity/AegisGuard`.
 
+Release vigente: `v3.1.0` (`dev/v3.1`). Las secciones `dev/v3.0` recogen evidencia histórica de las fases 1–6 sobre `3.0.0`/`3.0.1`; la configuración de seguridad vigente se describe en [SEGURIDAD.md](docs/SEGURIDAD.md) y el modelo de amenazas en [THREAT-MODEL.md](docs/THREAT-MODEL.md). Ninguna sección histórica implica que esos resultados se hayan repetido en `3.1`.
+
 ## Cómo funciona
 
 [Guía completa: evento → evidencia → decisión → remediación](docs/COMO-FUNCIONA.md).
@@ -21,8 +23,15 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 150 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 171 casos | `tests/Aegis.Checks`. |
 | SBOM, avisos y versionado | Implementado | SPDX 2.3, avisos de terceros, `VERSION` y licencia del proyecto. |
+
+### `v3.1.0` · release actual
+
+- Release: https://github.com/superbrucesecurity/AegisGuard/releases/tag/v3.1.0
+- ZIP: `AegisGuard-3.1.0-win-x64.zip` — SHA-256 `20796c3ff5619186ef5769b55acd7cb9c2c4b88ec9baff928ecff504d22e832c`.
+- Sello: `AegisGuard-3.1.0-win-x64.stamp.ps1`, firmado con `CN=Superbrucesecurity` (SHA-256 del certificado `a3481e2b582a7b9304b1e6f37b2f84809315bc925abb2fcb9d723a33159fe4a0`). Certificado autofirmado, sin marca de tiempo RFC3161.
+- Instalación: `deploy\install.cmd -PackageDir <directorio-descomprimido> -ExpectedSignerSha256 a3481e2b582a7b9304b1e6f37b2f84809315bc925abb2fcb9d723a33159fe4a0`.
 
 ### `dev/v3.0` · Fase 1 — correcciones críticas verificadas
 
@@ -31,7 +40,7 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 - **Colas:** prioridad para alertas críticas, coalescencia corregida (el primer evento ya no se descarta), contadores reales de descarte y alerta de pérdida de visibilidad. Los duplicados coalescionados se contabilizan en `coalescedEvents`, no como pérdida; solo los descartes reales degradan el estado mostrado.
 - **Token local:** formato validado, recuperación atómica si está corrupto, conservación del archivo inválido y comparación en tiempo constante. La UI recarga una sola vez si el token cambia.
 - **Pipeline:** `ProcessStarted` se enriquece con hash/firma/reglas de la imagen y comprueba PID + tiempo de creación; la regla WFP por aplicación se crea antes de mover el archivo a cuarentena.
-- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.0.1`).
+- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.1.0`).
 
 Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo user-mode y no sustituye un driver firmado.
 
@@ -39,7 +48,7 @@ Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo u
 
 - `finish.cmd` ya no crea la tarea `ONLOGON`: registra `AegisGuardSvc` con `sc.exe`, inicio `auto`, reinicios escalonados `5/10/30 s` y `binPath` directo al ejecutable publicado. Las variables de entorno se escriben en el registro del servicio, de modo que el proceso recibe los controles de stop/shutdown del SCM.
 - La SPA y los watchers usan el perfil del usuario interactivo registrado por el instalador (`AEGIS_UI_USER_SID`) incluso cuando el proceso se ejecuta como `LocalSystem`; sin esto, Desktop/Documentos/Downloads apuntaban a `systemprofile` y la protección quedaba degradada.
-- Logs en el registro de eventos de Windows con el proveedor del nombre del servicio, verificado con entradas reales. La API `/api/status` informa de `serviceName` y `managedByScm`.
+- Logs en el registro de eventos de Windows con el proveedor del nombre del servicio, verificado con entradas reales. La operación IPC `Status` informa de `serviceName` y `managedByScm`.
 - La desinstalación detiene y elimina el servicio, limpia la tarea heredada y elimina el proveedor del registro de eventos. `run-service.cmd` queda únicamente para diagnóstico manual.
 
 Ciclo verificado en ruta aislada: `install.cmd` → `finish.cmd` → servicio `Running`/`Auto` → API `3.0.0` → `uninstall.cmd`. El estado final fue `learning` con `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `droppedEvents=0`, `coalescedEvents=5` y 9 entradas reales en el registro de eventos.
@@ -67,7 +76,7 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 
 ### `dev/v3.0` · Fase 5 — SBOM, avisos y versionado
 
-- `Directory.Build.props` sigue siendo la única fuente del número `3.0.1`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
+- `Directory.Build.props` sigue siendo la única fuente del número `3.1.0`: ensamblados, `/healthz`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
 - `deploy/Generate-Sbom.ps1` consulta `dotnet list package --include-transitive --format json` y genera un SPDX 2.3 con 50 paquetes (producto, dependencias de ejecución y dependencias de test marcadas como `DEV_DEPENDENCY_OF`). Las licencias se toman de los `.nuspec` reales de la caché NuGet; WebView2 se identifica como `BSD-3-Clause` y su texto se copia a `licenses/`.
 - `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. `EULA-EVALUATION.md` concede una licencia limitada para probar el paquete firmado sin uso comercial; prohíbe distribuirlo, comercializarlo y modificar el código sin permiso escrito.
 - `finish.cmd` acepta opcionalmente `[INTELPACKAGEDIR]` e `[INTELKEYHASH]` (o las variables de entorno del mismo nombre) y `Register-Service.ps1` valida ambas antes de escribirlas en el entorno del SCM. Así el paquete firmado de la Fase 4 puede usarse también en una instalación gestionada.
@@ -89,7 +98,19 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 - `Package-Release.ps1` agrupa la etapa en `AegisGuard-<versión>-win-x64.zip` y añade un sello firmado con el SHA-256 del ZIP; `Verify-Archive.ps1` comprueba el sello y vuelve a verificar el contenido interior. El ZIP incluye la carpeta `deploy` con instalación, verificación, desinstalación y rollback, por lo que es autocontenido. En laboratorio, un ZIP modificado fue rechazado por diferencia de hash.
 - Los comandos completos y los límites de esta cadena están en [operaciones](docs/OPERACIONES.md) y [seguridad](docs/SEGURIDAD.md). No se desactiva ningún antivirus para firmar, instalar ni probar; la firma no incluye marca de tiempo RFC3161 y el pinning depende de la huella fijada por el administrador.
 
-### `dev/v3.0` · P0 — superficie administrativa verificable
+### `dev/v3.1` — superficie de datos cerrada y cadena de confianza reforzada
+
+- El servicio HTTP publica **sólo** archivos estáticos y `/healthz`. No hay rutas `/api/*`: ni lecturas, ni análisis, ni mutaciones. Cualquier `POST`/`PUT`/`DELETE` devuelve `405` y un `GET` a una ruta `/api/*` devuelve el `index.html` estático, nunca datos.
+- Toda la información de la interfaz y los análisis viajan por la Named Pipe local (`Health`, `Status`, `Events`, `Threats`, `QuarantineList`, `Firewall*`, `SettingsGet`, `ScanPath`, `SelftestEicar`). Las cinco mutaciones siguen exigiendo UAC real. La SPA no usa `fetch` para datos y no posee credenciales.
+- `ScanPath` restringe las rutas al perfil/temp y a `AEGIS_SCAN_ALLOWED_ROOTS`; rechaza `%AEGIS_DATA_DIR%`, rutas del sistema y reparse points. El motor de análisis sigue siendo el mismo y no persiste ni remedia en la variante manual.
+- La DACL del pipe incluye únicamente SYSTEM y el SID fijado por el instalador: sin `AEGIS_UI_USER_SID` válido el canal no arranca, y una elevación con otra cuenta administradora se rechaza. Hay timeout por conexión, cuatro clientes simultáneos, dos análisis concurrentes y auditoría de todos los intentos, incluidos los rechazos previos al parseo.
+- El archivo de respuesta UAC se crea en un directorio privado cuya ACL se aplica antes de escribir; los argumentos usan `ArgumentList` y la espera tiene límite de dos minutos.
+- Cadena de publicación: pin de firmante obligatorio salvo `-AllowUnpinnedSigner`, re-verificación de la copia instalada y del ZIP recién creado, `Check-Ci.ps1` con lista fija de scripts (incluidos `.cmd`) y comparación de `licenses/` con la caché NuGet, CI en `dev/v3.1` con SDK 10.0.404, `timeout-minutes` y `concurrency`.
+- El analizador PE aplica ahora el tope declarado de 1 MiB y marca el análisis como incompleto si hay más bytes; `IntelPackage.TryVerify` valida el pin de clave dentro de la verificación, antes de cargar reglas.
+- La correlación temporal (proceso→red, proceso→persistencia) es en memoria, acotada y auditable con los IDs de ambos eventos; no bloquea por sí sola. El análisis manual devuelve un informe acotado con cobertura, estado por analizador y contribuciones, renderizado en la SPA sin `fetch` ni nueva operación IPC.
+- Verificado localmente con build Release sin advertencias, **171/171 tests** y `Check-Ci.ps1` correcto: humo IPC real, rechazo de ruta de estado y `405` HTTP. Ver [THREAT-MODEL.md](docs/THREAT-MODEL.md) para severidades, evidencias y riesgos residuales.
+
+### `dev/v3.0` · P0 — superficie administrativa verificable (histórico)
 
 - Se eliminó `ui-token` y el middleware `Bearer`. La SPA no inyecta credenciales y la API HTTP solo ofrece lecturas y análisis; las rutas que gestionaban firewall, cuarentena y política ya no existen en HTTP.
 - Las operaciones sensibles pasan por `AegisBridge` → UAC → Named Pipe con ACL. El servicio verifica PID, SID, integridad (`TokenIntegrityLevel`), elevación (`TokenElevationType`) y pertenencia a Administradores/Interactivo desde el token real del proceso cliente; ningún atributo se toma del payload.
@@ -98,12 +119,12 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 - Correcciones durante la implementación: RIDs de integridad y valores de `TOKEN_ELEVATION_TYPE` alineados con `winnt.h`, orden correcto de `CheckTokenMembership`, duplicación del token primario con `TOKEN_DUPLICATE`, tolerancia a BOM en la trama IPC y comprobación de salud del instalador sin token.
 - Verificado con build Release sin advertencias, 147 tests y dos pruebas de humo aisladas: la API HTTP devuelve `405` para las cinco mutaciones retiradas y `200` para `/api/scan` sin crear `ui-token`; un cliente elevado real fue autorizado por la Named Pipe y su intento quedó en `privileged-audit.jsonl`, mientras una operación desconocida fue rechazada antes del despacho.
 
-### `dev/v3.0` · P1 — CI reproducible sin cambiar la licencia
+### `dev/v3.0` · P1 — CI reproducible sin cambiar la licencia (histórico)
 
 - `.github/workflows/ci.yml` ejecuta en `windows-latest`: restore, build Release, 150 tests con results TRX y la verificación local de despliegue. No publica release, no firma y no necesita secretos.
 - `deploy/Check-Ci.ps1` comprueba la sintaxis de los 13 scripts de despliegue, regenera el SBOM/avisos y los compara con los committed, construye una etapa real con `Setup-Aegis.ps1 -StageOnly` y valida VERSION dependencias de `deploy`, ausencia de `ui-token` y copia byte a byte de los scripts incluidos. Además arranca el servicio publicado en un puerto de loopback libre (`AEGIS_HTTP_PORT`), con los sensores desactivados solo en ese proceso (`AEGIS_MONITOR_DISABLED=1`, el motor de análisis sigue siendo el real) y con un `TEMP` aislado, para que la actividad del runner no se registre como observación. Así comprueba que `POST /api/scan` devuelve una decisión real sin crear `events.jsonl`, `threats.jsonl`, `reputation.json`, ni cambiar contadores, cuarentena o reglas.
 - Corrección arquitectónica: `POST /api/scan` usa `ScanPathReadOnlyAsync`, que reutiliza el enriquecimiento y la decisión sin persistir ni remediar. La monitorización automática mantiene el flujo completo con remediación.
-- El nombre de la Named Pipe se deriva siempre de `AEGIS_UI_USER_SID` mediante una función compartida en `Aegis.Core`; si UAC solicita otra cuenta administradora, el proceso elevado usa el SID autorizado por la instalación y no el suyo.
+- El nombre de la Named Pipe se deriva siempre de `AEGIS_UI_USER_SID` mediante una función compartida en `Aegis.Core`; esa decisión de `dev/v3.0` se refinó en `dev/v3.1`: el token del proceso elevado debe pertenecer a ese mismo SID, por lo que una elevación con otra cuenta administradora se rechaza.
 - `PrivilegedOperation` tiene una única definición en `Aegis.Core`, compartida por servicio, puente WebView2 y pruebas; un test compara los nombres de la SPA con el enum. Un test de integración con el motor real comprueba que la variante de solo lectura no persiste ni remedia, y el extremo HTTP compartido por servicio y UI permite aislar la prueba de CI en un puerto libre.
 - [Auditoría de licencias](docs/P1-LICENCIAS.md): un único autor en el historial, sin `Co-authored-by`, sin activos de imagen/fuente y dependencias MIT/BSD-3-Clause/Apache-2.0. La migración a Apache-2.0 sigue bloqueada hasta obtener confirmación escrita del titular y revisar origen de reglas y fragmentos; **no se ha tocado `LICENSE` ni `EULA-EVALUATION.md`**.
 
@@ -118,13 +139,21 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 
 ## Instalación rápida
 
+Desde un paquete firmado verificado (recomendado):
+
 ```powershell
-.\deploy\install.cmd
+.\deploy\install.cmd -PackageDir <directorio-descomprimido> -ExpectedSignerSha256 a3481e2b582a7b9304b1e6f37b2f84809315bc925abb2fcb9d723a33159fe4a0
 ```
 
-`install.cmd` publica `Aegis.Service` y `Aegis.UI` en un directorio temporal, comprueba los ejecutables generados y sustituye la instalación anterior mediante una copia de seguridad que se restaura si falla cualquier paso. Sin procesos propios en ejecución, crea `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`) con ACL restringida, copia las reglas y genera los `.cmd` de arranque. Estos `.cmd` exportan `AEGIS_DATA_DIR` y `AEGIS_RULES_DIR` para que los binarios usen exactamente las mismas rutas aisladas. No se escriben credenciales ni se contacta con servidores externos.
+Para generar una etapa local sin firma (solo desarrollo; el instalador lo advierte y lo permite únicamente de forma explícita):
 
-Después, ejecute `finish.cmd` como administrador para restringir ACL, registrar el servicio SCM con inicio automático y crear los accesos directos. Se mantiene como paso separado porque algunos productos de seguridad bloquean scripts que combinan elevación, ACL y persistencia en un único archivo. Acepta argumentos opcionales para pruebas aisladas: `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME]`; sin ellos usa `AegisGuardSvc` y el resto de nombres de producción. El servicio no depende de que exista una sesión de usuario.
+```powershell
+.\deploy\install.cmd -AllowUnsigned
+```
+
+`install.cmd` sin argumentos **no instala**: rechaza la etapa sin manifiesto firmado. Pase `-PackageDir` con el paquete verificado o `-AllowUnsigned` de forma consciente. Publica `Aegis.Service` y `Aegis.UI` en un directorio temporal, comprueba los ejecutables generados y sustituye la instalación anterior mediante una copia de seguridad que se restaura si falla cualquier paso. Sin procesos propios en ejecución, crea `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`) con ACL restringida, copia las reglas y genera los `.cmd` de arranque. Estos `.cmd` exportan `AEGIS_DATA_DIR` y `AEGIS_RULES_DIR` para que los binarios usen exactamente las mismas rutas aisladas. No se escriben credenciales ni se contacta con servidores externos.
+
+Después, ejecute `finish.cmd` como administrador para restringir ACL, registrar el servicio SCM con inicio automático y crear los accesos directos. `Register-Service.ps1` fija `AEGIS_UI_USER_SID` al SID de quien ejecuta `finish.cmd`: ése es el único usuario autorizado a abrir la tubería local, también después de una elevación UAC. Se mantiene como paso separado porque algunos productos de seguridad bloquean scripts que combinan elevación, ACL y persistencia en un único archivo. Acepta argumentos opcionales para pruebas aisladas: `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME]`; sin ellos usa `AegisGuardSvc` y el resto de nombres de producción. El servicio no depende de que exista una sesión de usuario para monitorizar, pero el canal de datos exige que el SID configurado pertenezca a una sesión interactiva.
 
 El instalador y el desinstalador aceptan `-InstallDir` y `-DataDir`, por lo que pueden verificarse en una carpeta temporal sin modificar `C:\Program Files` ni `C:\ProgramData`. El desinstalador también admite `-TaskPrefix`, `-ServiceName` y `-ShortcutName` para limpiar despliegues aislados. El ciclo completo (instalar → `finish` → servicio activo → desinstalar) se validó en una ruta aislada.
 
@@ -150,28 +179,26 @@ dotnet run --project src/Aegis.UI/Aegis.UI.csproj
 
 Puesto: servicio local en `http://127.0.0.1:8787`.
 
-La SPA se sirve desde `src/Aegis.Service/wwwroot` y no recibe credenciales: no hay `ui-token`, `window.AEGIS_TOKEN` ni cabeceras `Bearer`. WebView2 solo expone el objeto nativo `aegis` a ese origen; las operaciones sensibles se ejecutan en un proceso elevado mediante UAC y se envían por una Named Pipe con ACL. El nombre de la tubería se deriva del SID del usuario autorizado, por lo que no es configurable ni adivinable por otra sesión.
+La SPA se sirve desde `src/Aegis.Service/wwwroot` y no recibe credenciales: no hay `ui-token`, `window.AEGIS_TOKEN` ni cabeceras `Bearer`. WebView2 solo expone el objeto nativo `aegis` a ese origen. Todas las operaciones de datos se envían por una Named Pipe con ACL; las mutaciones se ejecutan en un proceso elevado mediante UAC. El nombre de la tubería se deriva del SID fijado por el instalador, no del usuario del proceso elevado.
 
-## API local
+## Superficie local
 
-La API HTTP escucha solo en `127.0.0.1:8787`, rechaza `Host` externos y cabeceras `Origin`/`Sec-Fetch-Site` cross-site, y sirve únicamente lecturas y análisis. `/healthz` es público y solo confirma que el proceso responde. No hay autenticación por token: quien pueda abrir una conexión local solo puede leer estado y analizar ficheros.
+El servicio HTTP escucha solo en `127.0.0.1:8787`, rechaza `Host` externos y cabeceras `Origin`/`Sec-Fetch-Site` cross-site, y sirve **únicamente** archivos estáticos y `/healthz`. No hay rutas `/api/*` ni autenticación por token: un cliente HTTP no puede leer estado ni analizar ficheros.
 
-| Método | Ruta | Uso |
+| Superficie | Operación | Uso |
 | --- | --- | --- |
-| GET | `/healthz` | Comprobación pública (sin estado interno). |
-| GET | `/api/health` | Comprobación viva con versión. |
-| GET | `/api/status` | Estado, CPU, RAM, contadores y política. |
-| GET | `/api/events?limit=100&skip=0&severity=High&verdict=Block` | Observaciones recientes con filtros opcionales. |
-| GET | `/api/threats?limit=100&skip=0&severity=Critical` | Solo decisiones no `Allow`, con filtros opcionales. |
-| GET | `/api/quarantine` | Elementos en cuarentena. |
-| GET | `/api/firewall/rules` | Nombres de reglas WFP gestionadas. |
-| GET | `/api/firewall/stats` | Contadores de reglas activas (no paquetes bloqueados). |
-| GET | `/api/firewall/learned` | Conexiones vistas en modo aprendizaje. |
-| GET | `/api/settings` | Política de detección. |
-| POST | `/api/selftest/eicar` | Prueba EICAR sin persistencia ni remediación. |
-| POST | `/api/scan` | Análisis manual de un fichero. |
+| HTTP | `GET /healthz` | Comprobación pública (sin estado interno). |
+| IPC | `Health` | Comprobación viva con versión. |
+| IPC | `Status` | Estado, CPU, RAM, contadores y política. |
+| IPC | `Events` (`limit`, `skip`, `severity`, `verdict`) | Observaciones recientes con filtros opcionales. |
+| IPC | `Threats` (`limit`, `skip`, `severity`) | Solo decisiones no `Allow`. |
+| IPC | `QuarantineList` | Elementos en cuarentena. |
+| IPC | `FirewallRules` / `FirewallStats` / `FirewallLearned` | Reglas gestionadas, contadores de reglas (no paquetes bloqueados) y conexiones aprendidas. |
+| IPC | `SettingsGet` | Política de detección. |
+| IPC | `SelftestEicar` | Prueba EICAR sin persistencia ni remediación. |
+| IPC | `ScanPath` (`path`) | Análisis manual de un fichero permitido, sin persistencia ni remediación. |
 
-Las mutaciones ya **no** están en HTTP. Se atienden por IPC privilegiado (`AegisBridge` → Named Pipe → servicio), con identidad leída del token del proceso cliente, elevación completa, integridad alta, pertenencia al grupo Administradores y sesión interactiva:
+Las cinco mutaciones se atienden por IPC privilegiado (`AegisBridge` → Named Pipe → servicio), con identidad leída del token del proceso cliente, SID igual al de la instalación, elevación completa, integridad alta, pertenencia al grupo Administradores y sesión interactiva:
 
 | Operación IPC | Efecto |
 | --- | --- |

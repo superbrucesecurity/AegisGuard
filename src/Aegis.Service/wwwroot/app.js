@@ -1,9 +1,27 @@
 (() => {
   'use strict';
 
-  // Las operaciones sensibles no se envían por HTTP: pasan por el objeto
-  // nativo 'aegis', que exige elevación real. La SPA no posee credenciales.
-  const privilegedRoutes = [
+  // El servicio HTTP publica solo los archivos estáticos y /healthz. Cada
+  // dato que muestra la interfaz se pide al objeto nativo 'aegis', que comprueba
+  // la identidad real del proceso. La SPA no posee credenciales ni token.
+  const listPayload = (_, __, query) => ({
+    limit: Number(query.limit || 100),
+    skip: Number(query.skip || 0),
+    severity: query.severity || null,
+    verdict: query.verdict || null
+  });
+  const apiRoutes = [
+    { method: 'GET', re: /^\/api\/health\/?$/, op: 'Health', payload: () => ({}) },
+    { method: 'GET', re: /^\/api\/status\/?$/, op: 'Status', payload: () => ({}) },
+    { method: 'GET', re: /^\/api\/events\/?$/, op: 'Events', payload: listPayload },
+    { method: 'GET', re: /^\/api\/threats\/?$/, op: 'Threats', payload: listPayload },
+    { method: 'GET', re: /^\/api\/quarantine\/?$/, op: 'QuarantineList', payload: () => ({}) },
+    { method: 'GET', re: /^\/api\/firewall\/rules\/?$/, op: 'FirewallRules', payload: () => ({}) },
+    { method: 'GET', re: /^\/api\/firewall\/stats\/?$/, op: 'FirewallStats', payload: () => ({}) },
+    { method: 'GET', re: /^\/api\/firewall\/learned\/?$/, op: 'FirewallLearned', payload: () => ({}) },
+    { method: 'GET', re: /^\/api\/settings\/?$/, op: 'SettingsGet', payload: () => ({}) },
+    { method: 'POST', re: /^\/api\/scan\/?$/, op: 'ScanPath', payload: (_, body) => ({ path: body.path }) },
+    { method: 'POST', re: /^\/api\/selftest\/eicar\/?$/, op: 'SelftestEicar', payload: () => ({}) },
     { method: 'POST', re: /^\/api\/firewall\/rules\/?$/, op: 'FirewallAddRule',
       payload: (_, body) => ({ spec: body }) },
     { method: 'DELETE', re: /^\/api\/firewall\/rules\/(.+)$/, op: 'FirewallRemoveRule',
@@ -76,28 +94,17 @@
 
   async function api(path, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
-    for (const route of privilegedRoutes) {
+    const question = path.indexOf('?');
+    const routePath = question >= 0 ? path.slice(0, question) : path;
+    const query = Object.fromEntries(new URLSearchParams(question >= 0 ? path.slice(question + 1) : ''));
+    for (const route of apiRoutes) {
       if (route.method !== method) continue;
-      const match = path.match(route.re);
+      const match = routePath.match(route.re);
       if (!match) continue;
       const body = options.body ? JSON.parse(options.body) : {};
-      const payload = route.payload ? route.payload(match, body) : body;
-      return privilegedCall(route.op, payload);
+      return privilegedCall(route.op, route.payload(match, body, query));
     }
-
-    const headers = { Accept: 'application/json', ...(options.headers || {}) };
-    if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-    const response = await fetch(path, { ...options, headers, cache: 'no-store' });
-    if (response.status === 403) {
-      throw new Error('Acceso denegado: la interfaz debe abrirse desde 127.0.0.1.');
-    }
-    if (!response.ok) {
-      let detail = '';
-      try { detail = (await response.json()).error || ''; } catch { /* cuerpo no JSON */ }
-      throw new Error(detail || `Error HTTP ${response.status}`);
-    }
-    if (response.status === 204) return null;
-    return response.json();
+    throw new Error(`Operación no soportada por el canal local: ${method} ${routePath}`);
   }
 
   function toast(message, isError = false) {
@@ -386,7 +393,7 @@
 
   function renderScan() {
     const box = $('#scanResult');
-    if (!state.scanResult) { box.hidden = true; return; }
+    if (!state.scanResult) { box.hidden = true; $('#scanReport').hidden = true; return; }
     box.hidden = false;
     const d = state.scanResult.decision || {}, o = state.scanResult.observation || {};
     const [verdict] = VERDICT[d.verdict] || [String(d.verdict ?? '—')];
@@ -408,6 +415,57 @@
     ];
     $('#scanMeta').innerHTML = entries.map(([key, value]) =>
       `<div><dt>${esc(key)}</dt><dd>${esc(value || '—')}</dd></div>`).join('');
+    renderScanReport(state.scanResult.report || null);
+  }
+
+  // El informe se deriva de evidencia ya calculada por el motor. Si el servicio
+  // es de una versión anterior que no lo envía, el panel queda oculto.
+  function renderScanReport(report) {
+    const panel = $('#scanReport');
+    if (!report) { panel.hidden = true; return; }
+    panel.hidden = false;
+    $('#scanReportHeader').textContent = `v${report.schemaVersion || '1.0'} · ${number(report.elapsedMs)} ms`;
+    const coverage = report.coverage || {};
+    const yesNo = (value) => value ? 'sí' : 'no';
+    const coverageEntries = [
+      ['Bytes inspeccionados', `${number(coverage.bytesInspected)} / ${number(coverage.maxScanBytes)}`],
+      ['Hash completado', yesNo(!coverage.hashTruncated)],
+      ['Contenedor completado', yesNo(!coverage.containerTruncated)],
+      ['Hash reconfirmado', yesNo(coverage.hashReconfirmed)]
+    ];
+    $('#scanReportCoverage').innerHTML = coverageEntries.map(([key, value]) =>
+      `<div><dt>${esc(key)}</dt><dd>${esc(value)}</dd></div>`).join('');
+
+    const labels = {
+      yara: 'Reglas locales', pe: 'Estructura PE', script: 'Scripts',
+      archive: 'Comprimidos', macro: 'Macros', integrity: 'Integridad del análisis'
+    };
+    $('#scanReportAnalyzers').innerHTML = (report.analyzers || []).map((section) => {
+      const status = section.ran ? 'ejecutado'
+        : `no ejecutado (${section.notRunReason || 'motivo no disponible'})`;
+      const findings = (section.findings || []).map((finding) => {
+        const [severity] = SEVERITY[finding.severity] || [String(finding.severity || '—')];
+        const evidence = (finding.evidence || []).map((item) => `<li>${esc(item)}</li>`).join('');
+        return `<li><strong>${esc(finding.ruleId)}</strong> · ${esc(finding.name)} · ${esc(severity)}` +
+          `<ul>${evidence}</ul></li>`;
+      }).join('') || '<li>Sin hallazgos en este analizador</li>';
+      return `<div class="evidence"><h4>${esc(labels[section.category] || section.category)}` +
+        ` <small>${esc(status)}</small></h4><ul>${findings}</ul></div>`;
+    }).join('');
+
+    $('#scanReportContributions').innerHTML = (report.contributions || []).map((item) =>
+      `<li>${esc(item.source)} · ${esc(item.reason)} (${esc(item.weight)}) · ${esc(item.evidence)}</li>`).join('')
+      || '<li>Sin contribuciones registradas</li>';
+
+    const warnings = [];
+    if (report.truncated) warnings.push('El informe se recortó por los límites de tamaño; no es un análisis completo.');
+    if (coverage.hashTruncated) warnings.push('El hash se calculó sobre un prefijo del fichero.');
+    if (coverage.containerTruncated) warnings.push('El contenedor no se analizó por completo.');
+    if (coverage.hashReconfirmed === false)
+      warnings.push('El fichero cambió durante el análisis o no se pudo calcular el hash; no se afirma que sea inocuo.');
+    const warning = $('#scanReportWarning');
+    warning.hidden = warnings.length === 0;
+    warning.textContent = warnings.join(' ');
   }
 
   function renderSettings() {

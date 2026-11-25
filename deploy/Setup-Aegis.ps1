@@ -9,7 +9,8 @@ param(
     [string]$BackupDir,
     [string]$ExpectedSignerSha256,
     [switch]$AllowUnsigned,
-    [switch]$AllowUntrustedTestSigner
+    [switch]$AllowUntrustedTestSigner,
+    [switch]$AllowUnpinnedSigner
 )
 
 $ErrorActionPreference = 'Stop'
@@ -172,7 +173,7 @@ try {
     if (Test-Path -LiteralPath $manifestPath) {
         Write-Host 'Verificando integridad y firmas del paquete antes de aplicarlo...'
         try {
-            & (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $stage -ManifestPath $manifestPath -ExpectedSignerSha256 $ExpectedSignerSha256 -AllowUntrustedTestSigner:$AllowUntrustedTestSigner
+            & (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $stage -ManifestPath $manifestPath -ExpectedSignerSha256 $ExpectedSignerSha256 -AllowUntrustedTestSigner:$AllowUntrustedTestSigner -AllowUnpinnedSigner:$AllowUnpinnedSigner
             if (-not $?) { throw 'Verify-Release.ps1 devolvió un error.' }
         }
         catch {
@@ -211,6 +212,18 @@ try {
     }
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     Copy-Item -Path (Join-Path $stage '*') -Destination $InstallDir -Recurse -Force
+
+    # La verificación previa ocurre antes de la copia; se repite sobre los
+    # ficheros ya instalados para cerrar una ventana TOCTOU con el directorio
+    # temporal de etapa. Si falla, el bloque catch restaura la versión anterior.
+    if (-not $AllowUnsigned -and (Test-Path -LiteralPath (Join-Path $InstallDir $manifestName))) {
+        & (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $InstallDir `
+            -ManifestPath (Join-Path $InstallDir $manifestName) `
+            -ExpectedSignerSha256 $ExpectedSignerSha256 `
+            -AllowUntrustedTestSigner:$AllowUntrustedTestSigner `
+            -AllowUnpinnedSigner:$AllowUnpinnedSigner
+        if (-not $?) { throw 'La verificación posterior a la copia falló; no se aplicó el paquete.' }
+    }
 
     if ($backup -and $BackupDir) {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BackupDir) | Out-Null

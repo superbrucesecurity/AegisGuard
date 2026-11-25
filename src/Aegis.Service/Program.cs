@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Aegis.Core;
 using Aegis.Service;
 using Microsoft.Extensions.Hosting.WindowsServices;
@@ -40,6 +39,7 @@ builder.Services.AddSingleton(new ThreatIntel());
 builder.Services.AddSingleton(new QuarantineManager(appRoot));
 builder.Services.AddSingleton(new FirewallManager());
 builder.Services.AddSingleton(new RansomwareCanary(appRoot));
+builder.Services.AddSingleton(new CorrelationEngine());
 builder.Services.AddSingleton<DetectionPipeline>();
 builder.Services.AddHostedService<MonitoringWorker>();
 
@@ -58,26 +58,20 @@ var packageDir = Environment.GetEnvironmentVariable("AEGIS_INTEL_PACKAGE_DIR");
 string? intelStatus;
 string? packageError = null;
 if (!string.IsNullOrWhiteSpace(trustedKeyHash) && !string.IsNullOrWhiteSpace(packageDir) &&
-    IntelPackage.TryVerify(packageDir, out var package, out packageError))
+    IntelPackage.TryVerify(packageDir, trustedKeyHash, out var package, out packageError))
 {
     var keyFile = Path.Combine(packageDir, IntelPackage.PublicKeyFileName);
     // La clave pública fijada no es secreta, pero su integridad sí: se impide
     // que un usuario estándar pueda sustituirla en el directorio del paquete.
     if (OperatingSystem.IsWindows()) LocalFileAcl.Restrict(keyFile);
-    var keyDocument = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(keyFile));
-    var actualKeyHash = keyDocument.GetProperty("sha256").GetString();
-    if (string.Equals(actualKeyHash, trustedKeyHash, StringComparison.OrdinalIgnoreCase))
-    {
-        intel.Load(Path.Combine(packageDir, IntelPackage.IntelFileName));
-        // Solo se cargan reglas incluidas en el manifiesto: un fichero extra
-        // colocado en el directorio no amplía la inteligencia activa.
-        yara.LoadFiles(package!.Files
-            .Where(f => f.Path.EndsWith(".yar", StringComparison.OrdinalIgnoreCase) ||
-                        f.Path.EndsWith(".yara", StringComparison.OrdinalIgnoreCase))
-            .Select(f => Path.Combine(packageDir, f.Path)));
-        intelStatus = $"verified:{package.Version}";
-    }
-    else intelStatus = "rejected:untrusted-key";
+    intel.Load(Path.Combine(packageDir, IntelPackage.IntelFileName));
+    // Solo se cargan reglas incluidas en el manifiesto: un fichero extra
+    // colocado en el directorio no amplía la inteligencia activa.
+    yara.LoadFiles(package!.Files
+        .Where(f => f.Path.EndsWith(".yar", StringComparison.OrdinalIgnoreCase) ||
+                    f.Path.EndsWith(".yara", StringComparison.OrdinalIgnoreCase))
+        .Select(f => Path.Combine(packageDir, f.Path)));
+    intelStatus = $"verified:{package.Version}";
 }
 else if (!string.IsNullOrWhiteSpace(trustedKeyHash) || !string.IsNullOrWhiteSpace(packageDir))
 {
@@ -124,48 +118,40 @@ app.Use(async (context, next) =>
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
     context.Response.Headers["Content-Security-Policy"] =
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
-        "connect-src 'self'; object-src 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; " +
+        "connect-src 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; " +
         "frame-ancestors 'none'; base-uri 'none'";
 
-    if (context.Request.Path.StartsWithSegments("/api"))
+    // El servicio HTTP publica únicamente archivos estáticos y /healthz.
+    // Todas las operaciones de datos, incluidos los análisis, se atienden por
+    // la tubería local con identidad verificada (see PrivilegedIpcDispatcher).
+    // Las cabeceras de origen se comprueban incluso para estáticos para frenar
+    // DNS rebinding contra el enlace de loopback.
+    var host = context.Request.Host.Host;
+    if (host is not ("127.0.0.1" or "localhost" or "[::1]"))
     {
-        var host = context.Request.Host.Host;
-        if (host is not ("127.0.0.1" or "localhost" or "[::1]"))
-        {
-            context.Response.StatusCode = 403;
-            return;
-        }
-        // La API HTTP sólo sirve lecturas y análisis. La credencial Bearer se
-        // eliminó: las operaciones sensibles se atienden por tubería con
-        // identidad verificada. Se valida el origen para frenar DNS rebinding
-        // y solicitudes cross-site desde páginas del propio equipo.
-        var origin = context.Request.Headers.Origin.ToString();
-        if (!string.IsNullOrEmpty(origin) &&
-            !string.Equals(origin, httpBase, StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.StatusCode = 403;
-            return;
-        }
-        var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
-        if (!string.IsNullOrEmpty(fetchSite) &&
-            !string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.StatusCode = 403;
-            return;
-        }
-        // Las mutaciones sensibles ya no están registradas. Sin esta guarda,
-        // MapFallbackToFile podría responder index.html a un POST/DELETE/PUT
-        // y hacer creer que la operación existe.
-        var isRead = HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method);
-        var isAllowedAnalysis =
-            HttpMethods.IsPost(context.Request.Method) &&
-            (context.Request.Path.Equals("/api/scan", StringComparison.OrdinalIgnoreCase) ||
-             context.Request.Path.Equals("/api/selftest/eicar", StringComparison.OrdinalIgnoreCase));
-        if (!isRead && !isAllowedAnalysis)
-        {
-            context.Response.StatusCode = 405;
-            return;
-        }
+        context.Response.StatusCode = 403;
+        return;
+    }
+    var origin = context.Request.Headers.Origin.ToString();
+    if (!string.IsNullOrEmpty(origin) &&
+        !string.Equals(origin, httpBase, StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = 403;
+        return;
+    }
+    var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
+    if (!string.IsNullOrEmpty(fetchSite) &&
+        !string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = 403;
+        return;
+    }
+    // Sin esta guarda, MapFallbackToFile respondería index.html con 200 a un
+    // POST/DELETE/PUT y simularía una API que ya no existe.
+    if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+    {
+        context.Response.StatusCode = 405;
+        return;
     }
     await next();
 });
@@ -177,12 +163,14 @@ var pipeline = app.Services.GetRequiredService<DetectionPipeline>();
 var firewall = app.Services.GetRequiredService<FirewallManager>();
 var quarantine = app.Services.GetRequiredService<QuarantineManager>();
 
-// Superficie administrativa: tubería con ACL, identidad verificada,
-// autorización por operación y auditoría de todos los intentos.
+// Superficie de datos: tubería local con ACL, identidad verificada,
+// autorización por SID y por operación, y auditoría de todos los intentos.
+// La interfaz no expone operaciones por HTTP, ni siquiera lecturas.
 if (OperatingSystem.IsWindows())
 {
-    var privilegedAudit = new PrivilegedAuditLog(appRoot);
-    var privilegedDispatcher = new PrivilegedIpcDispatcher(config, state, store, quarantine, firewall);
+    var privilegedAudit = new PrivilegedAuditLog(appRoot, app.Logger);
+    var privilegedDispatcher = new PrivilegedIpcDispatcher(
+        config, state, store, quarantine, firewall, pipeline);
     var privilegedIpc = new PrivilegedIpcServer(
         PrivilegedIpcEndpoints.PipeNameForCurrentUser(), privilegedDispatcher, privilegedAudit, app.Logger);
     var ipcCts = new CancellationTokenSource();
@@ -192,92 +180,6 @@ if (OperatingSystem.IsWindows())
 
 // healthz es público y no expone estado interno: solo confirma que el proceso responde.
 app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
-app.MapGet("/api/health", () => Results.Ok(new
-{
-    ok = true,
-    version = typeof(ScanRequest).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"
-}));
-
-app.MapGet("/api/status", () => Results.Json(state.Snapshot(firewall.IsAvailable()), JsonDefaults.Options));
-
-app.MapGet("/api/events", (int limit = 100, int skip = 0, string? severity = null, string? verdict = null) =>
-{
-    var threats = store.Threats;
-    var items = store.Observations
-        .Select(o =>
-        {
-            var node = JsonSerializer.SerializeToNode(o, JsonDefaults.Options)!.AsObject();
-            var decision = threats.FirstOrDefault(t =>
-                string.Equals(t.Decision.ObservationId, o.Id, StringComparison.Ordinal))?.Decision;
-            node["decision"] = decision is null
-                ? null
-                : JsonSerializer.SerializeToNode(decision, JsonDefaults.Options);
-            return (node, decision);
-        })
-        .Where(x => string.IsNullOrWhiteSpace(severity) ||
-                    string.Equals(x.decision?.Severity.ToString(), severity, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(verdict) ||
-                    string.Equals(x.decision?.Verdict.ToString(), verdict, StringComparison.OrdinalIgnoreCase))
-        .Reverse()
-        .Skip(Math.Max(0, skip))
-        .Take(Math.Clamp(limit, 1, 1000))
-        .Select(x => x.node)
-        .ToList();
-    return Results.Json(items, JsonDefaults.Options);
-});
-
-app.MapGet("/api/threats", (int limit = 100, int skip = 0, string? severity = null) =>
-    Results.Json(store.Threats
-        .Where(x => x.Decision.Verdict != Verdict.Allow)
-        .Where(x => string.IsNullOrWhiteSpace(severity) ||
-                    string.Equals(x.Decision.Severity.ToString(), severity, StringComparison.OrdinalIgnoreCase))
-        .Reverse()
-        .Skip(Math.Max(0, skip))
-        .Take(Math.Clamp(limit, 1, 1000))
-        .ToList(), JsonDefaults.Options));
-
-app.MapGet("/api/quarantine", async () => Results.Json(await quarantine.ListAsync(), JsonDefaults.Options));
-
-// Las mutaciones de cuarentena, firewall y política NO están expuestas por
-// HTTP. Se atienden únicamente por IPC con elevación real y auditoría.
-
-app.MapGet("/api/firewall/rules", () => Results.Json(firewall.ListRuleNames(), JsonDefaults.Options));
-
-app.MapGet("/api/firewall/stats", () =>
-{
-    var rules = firewall.ListRules();
-    return Results.Json(new FirewallRuleStats
-    {
-        Active = rules.Count,
-        Automatic = rules.Count(x => x.Automatic),
-        Manual = rules.Count(x => !x.Automatic)
-    }, JsonDefaults.Options);
-});
-
-app.MapGet("/api/firewall/learned", () => Results.Json(pipeline.LearnedConnections, JsonDefaults.Options));
-
-app.MapGet("/api/settings", () => Results.Json(state.GetPolicy(), JsonDefaults.Options));
-
-app.MapPost("/api/selftest/eicar", async (CancellationToken ct) =>
-    Results.Json(await pipeline.SelfTestEicarAsync(ct).ConfigureAwait(false), JsonDefaults.Options));
-
-app.MapPost("/api/scan", async (ScanRequest request, CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Path) || !File.Exists(request.Path))
-        return Results.BadRequest(new { error = "fichero no encontrado" });
-    try
-    {
-        var threat = await pipeline.ScanPathReadOnlyAsync(request.Path, ct);
-        return Results.Json(threat, JsonDefaults.Options);
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-});
-
 app.MapFallbackToFile("index.html");
 
 app.Run();
-
-public sealed record ScanRequest(string Path);

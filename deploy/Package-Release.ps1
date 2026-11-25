@@ -7,7 +7,8 @@ param(
     [string]$PfxPath,
     [SecureString]$PfxPassword,
     [string]$ExpectedSignerSha256,
-    [switch]$AllowUntrustedTestSigner
+    [switch]$AllowUntrustedTestSigner,
+    [switch]$AllowUnpinnedSigner
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,7 +65,7 @@ if ($AllowUntrustedTestSigner) {
 }
 
 # El ZIP solo se crea si el paquete interior supera la misma verificación que aplica el instalador.
-& (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $PackageDir -ExpectedSignerSha256 $ExpectedSignerSha256 -AllowUntrustedTestSigner:$AllowUntrustedTestSigner
+& (Join-Path $PSScriptRoot 'Verify-Release.ps1') -TargetDir $PackageDir -ExpectedSignerSha256 $ExpectedSignerSha256 -AllowUntrustedTestSigner:$AllowUntrustedTestSigner -AllowUnpinnedSigner:$AllowUnpinnedSigner
 
 $manifestPath = Join-Path $PackageDir 'RELEASE-SIGNATURES.json'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -113,6 +114,14 @@ if ($null -eq $signature.SignerCertificate) { throw 'El sello del ZIP no tiene c
 if ((Get-CertificateSha256 $signature.SignerCertificate) -ne $signer) {
     throw 'El sello del ZIP fue firmado por otro certificado.'
 }
+
+# El ZIP se verifica de nuevo desde fuera, incluido el contenido interior, para
+# cerrar la ventana entre la verificación de la etapa y la creación del archivo.
+& (Join-Path $PSScriptRoot 'Verify-Archive.ps1') -OutputDir $OutputDir -StampPath $stampPath `
+    -ExpectedSignerSha256 $ExpectedSignerSha256 `
+    -AllowUntrustedTestSigner:$AllowUntrustedTestSigner `
+    -AllowUnpinnedSigner:$AllowUnpinnedSigner
+if (-not $?) { throw 'Verify-Archive.ps1 no validó el ZIP recién creado.' }
 
 Write-Host "ZIP: $zipPath"
 Write-Host "SHA-256: $zipSha"

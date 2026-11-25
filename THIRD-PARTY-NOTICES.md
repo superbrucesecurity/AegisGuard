@@ -1,8 +1,8 @@
 # Aviso de terceros
 
-Generado para Aegis Guard 3.0.1 con `deploy/Generate-Sbom.ps1`. Las licencias se leen de los .nuspec de la caché NuGet local; NOASSERTION significa que el paquete no declara una expresión SPDX reconocible.
+Generado para Aegis Guard 3.1.0 con `deploy/Generate-Sbom.ps1`. Las licencias se leen de los .nuspec de la cachÃ© NuGet local; NOASSERTION significa que el paquete no declara una expresiÃ³n SPDX reconocible.
 
-| Paquete | Versión | Licencia declarada | Ámbito | Texto incluido |
+| Paquete | VersiÃ³n | Licencia declarada | Ãmbito | Texto incluido |
 | --- | --- | --- | --- | --- |
 | Microsoft.Diagnostics.NETCore.Client | 0.2.661903 | MIT | runtime | - |
 | Microsoft.Diagnostics.Tracing.TraceEvent | 4.0.0 | MIT | runtime | - |
@@ -54,4 +54,4 @@ Generado para Aegis Guard 3.0.1 con `deploy/Generate-Sbom.ps1`. Las licencias se
 | xunit.extensibility.execution | 2.9.3 | Apache-2.0 | test | - |
 | xunit.runner.visualstudio | 3.1.4 | Apache-2.0 | test | - |
 
-El código de Aegis Guard es propietario y se publica solo para transparencia y verificación; consulte LICENSE y EULA-EVALUATION.md. La evaluación no comercial del paquete firmado está permitida; la distribución, la comercialización y la modificación requieren permiso escrito. Las dependencias de terceros conservan sus propias licencias. El producto no usa credenciales, telemetría ni servicios remotos.
+El cÃ³digo de Aegis Guard es propietario y se publica solo para transparencia y verificaciÃ³n; consulte LICENSE. Las dependencias de terceros conservan sus propias licencias. El producto no usa credenciales, telemetrÃ­a ni servicios remotos.

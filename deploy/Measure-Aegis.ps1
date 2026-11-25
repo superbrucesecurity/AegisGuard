@@ -19,6 +19,79 @@ if ($Seconds -lt 1) { throw 'Seconds debe ser al menos 1.' }
 if ($ScanCount -lt 1) { throw 'ScanCount debe ser al menos 1.' }
 if ($LargeFileBytes -lt 1 -or $LargeFileBytes -gt 16MB) { throw 'LargeFileBytes debe estar entre 1 y 16777216.' }
 
+# HTTP solo publica /healthz; los datos se piden por la tubería local.
+$httpPort = 8787
+$parsedPort = 0
+$configuredPort = $env:AEGIS_HTTP_PORT
+if (-not [string]::IsNullOrWhiteSpace($configuredPort) -and
+    [int]::TryParse($configuredPort, [ref]$parsedPort) -and $parsedPort -ge 1 -and $parsedPort -le 65535) {
+    $httpPort = $parsedPort
+}
+$healthUrl = "http://127.0.0.1:$httpPort/healthz"
+
+# El nombre del pipe se deriva del SID autorizado exactamente igual que en C#.
+$authorizedSid = $env:AEGIS_UI_USER_SID
+if ([string]::IsNullOrWhiteSpace($authorizedSid)) {
+    $authorizedSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+}
+if ([string]::IsNullOrWhiteSpace($authorizedSid)) { throw 'No se pudo resolver el SID del usuario autorizado para el canal IPC.' }
+$sha = [Security.Cryptography.SHA256]::Create()
+try {
+    $sidHash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($authorizedSid))
+    $pipeHash = -join ($sidHash[0..7] | ForEach-Object { $_.ToString('x2') })
+}
+finally { $sha.Dispose() }
+$pipeName = "aegisguard-$pipeHash-privileged"
+
+function Test-IsUnderPath {
+    param([string]$Path, [string]$Root)
+    $trimChars = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+    $fullRoot = [IO.Path]::GetFullPath($Root).TrimEnd($trimChars)
+    return $fullPath.Equals($fullRoot, [StringComparison]::OrdinalIgnoreCase) -or
+           $fullPath.StartsWith($fullRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-HealthEndpoint {
+    param([string]$Url, [int]$TimeoutSec = 2)
+    try {
+        $body = Invoke-RestMethod -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec
+        return ([string]$body).Trim() -eq 'ok'
+    }
+    catch { return $false }
+}
+
+function Invoke-Ipc {
+    param([string]$Operation, [hashtable]$Payload = @{})
+    $request = @{ operation = $Operation; payload = $Payload } | ConvertTo-Json -Depth 12 -Compress
+    $client = [IO.Pipes.NamedPipeClientStream]::new(
+        '.', $pipeName, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
+    try {
+        $client.Connect(10000)
+        $bytes = [Text.Encoding]::UTF8.GetBytes($request + "`n")
+        $client.Write($bytes, 0, $bytes.Length)
+        $client.Flush()
+        $reader = [IO.StreamReader]::new($client, [Text.Encoding]::UTF8, $false, 4096, $true)
+        $line = $reader.ReadLine()
+        if (-not $line) { throw "El canal $pipeName no devolvió respuesta para $Operation." }
+        $response = $line | ConvertFrom-Json
+        if (-not $response.ok) { throw "IPC $Operation rechazada: $($response.error)" }
+        return $response.result
+    }
+    finally { $client.Dispose() }
+}
+
+# ScanPath rechaza el directorio de estado, así que los sintéticos se crean en
+# una raíz temporal aislada y distinta de -DataDir.
+$scanRoot = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('aegis-benchmark-scan-' + [guid]::NewGuid().ToString('N'))))
+if (Test-IsUnderPath -Path $scanRoot -Root $DataDir) {
+    throw 'El directorio temporal de escaneo cae dentro de -DataDir; ScanPath lo rechazaría. Elija otro -DataDir.'
+}
+$scanRootsForService = $env:AEGIS_SCAN_ALLOWED_ROOTS
+if ([string]::IsNullOrWhiteSpace($scanRootsForService)) { $scanRootsForService = $scanRoot }
+else { $scanRootsForService = "$scanRootsForService;$scanRoot" }
+
+New-Item -ItemType Directory -Force -Path $scanRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPath) | Out-Null
 
@@ -97,11 +170,11 @@ $startupMs = $null
 $startupMeasured = $false
 $buildConfiguration = 'unknown-reused-service'
 $processId = $null
-try { Invoke-WebRequest 'http://127.0.0.1:8787/healthz' -UseBasicParsing -TimeoutSec 2 | Out-Null; $alreadyRunning = $true }
+try { $alreadyRunning = Test-HealthEndpoint -Url $healthUrl -TimeoutSec 2 }
 catch { $alreadyRunning = $false }
 
 if ($alreadyRunning) {
-    $connection = Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction Stop | Select-Object -First 1
+    $connection = Get-NetTCPConnection -LocalPort $httpPort -State Listen -ErrorAction Stop | Select-Object -First 1
     $processId = [int]$connection.OwningProcess
     Write-Host " midiendo el servicio ya en ejecución (PID $processId); no se conoce su configuración de compilación."
 }
@@ -110,13 +183,20 @@ else {
     if (-not (Test-Path -LiteralPath $dll)) { throw "No se encontró $dll. Ejecute dotnet build -c $Configuration antes de medir." }
     $oldData = $env:AEGIS_DATA_DIR
     $oldRules = $env:AEGIS_RULES_DIR
+    $oldSid = $env:AEGIS_UI_USER_SID
+    $oldScanRoots = $env:AEGIS_SCAN_ALLOWED_ROOTS
     $env:AEGIS_DATA_DIR = $DataDir
     $env:AEGIS_RULES_DIR = Join-Path $root 'rules'
+    # El servidor IPC no abre la tubería sin el SID configurado.
+    $env:AEGIS_UI_USER_SID = $authorizedSid
+    $env:AEGIS_SCAN_ALLOWED_ROOTS = $scanRootsForService
     $startupWatch = [Diagnostics.Stopwatch]::StartNew()
     try { $serviceProcess = Start-Process -FilePath 'dotnet' -ArgumentList @($dll) -PassThru -WindowStyle Hidden }
     finally {
         $env:AEGIS_DATA_DIR = $oldData
         $env:AEGIS_RULES_DIR = $oldRules
+        $env:AEGIS_UI_USER_SID = $oldSid
+        $env:AEGIS_SCAN_ALLOWED_ROOTS = $oldScanRoots
     }
     $processId = [int]$serviceProcess.Id
     $startedByUs = $true
@@ -124,11 +204,10 @@ else {
     $ready = $false
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Milliseconds 500
-        try { Invoke-WebRequest 'http://127.0.0.1:8787/healthz' -UseBasicParsing -TimeoutSec 1 | Out-Null; $ready = $true; break }
-        catch { } # todavía arrancando
+        if (Test-HealthEndpoint -Url $healthUrl -TimeoutSec 1) { $ready = $true; break }
     }
     $startupWatch.Stop()
-    if (-not $ready) { throw 'El servicio no respondió a /healthz; revise los permisos y el puerto 8787.' }
+    if (-not $ready) { throw "El servicio no respondió '$healthUrl' con 'ok'; revise los permisos y el puerto $httpPort." }
     $startupMs = [Math]::Round($startupWatch.Elapsed.TotalMilliseconds, 1)
     $startupMeasured = $true
     Write-Host " servicio $Configuration iniciado para la medición (PID $processId, arranque $startupMs ms)."
@@ -186,14 +265,14 @@ try {
         $previousWrite = $snapshot.ServiceWriteBytes
     }
 
-    # El estado se lee antes de la fase de carga para conservar la línea base.
-    # Ya no existe token local: las lecturas HTTP son anónimas y solo en loopback.
-    try { $status = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -TimeoutSec 5 }
+    # El estado se lee por la tubería antes de la fase de carga para conservar
+    # la línea base. HTTP solo confirma disponibilidad; no expone datos.
+    try { $status = Invoke-Ipc -Operation 'Status' }
     catch { $status = $null }
 
     $load = $null
     if (-not $SkipLoad) {
-            $loadDir = Join-Path $DataDir ('benchmark-load-' + [guid]::NewGuid().ToString('N'))
+            $loadDir = Join-Path $scanRoot 'benchmark-load'
             New-Item -ItemType Directory -Force -Path $loadDir | Out-Null
             # Señales para el analizador de scripts, construidas en tiempo de
             # ejecución: el fichero .ps1 del benchmark no contiene código ejecutable.
@@ -217,7 +296,7 @@ try {
 
             $before = $null
             $after = $null
-            try { $before = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -TimeoutSec 5 } catch { }
+            try { $before = Invoke-Ipc -Operation 'Status' } catch { }
             $latencies = @()
             $verdicts = @{}
             $errors = @()
@@ -226,15 +305,12 @@ try {
             foreach ($path in $paths) {
                 $watch = [Diagnostics.Stopwatch]::StartNew()
                 try {
-                    $body = @{ path = $path } | ConvertTo-Json -Compress
-                    $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8787/api/scan' -Method Post -Body $body `
-                        -ContentType 'application/json' -UseBasicParsing -TimeoutSec 60
+                    $scan = Invoke-Ipc -Operation 'ScanPath' -Payload @{ path = $path }
                     $watch.Stop()
                     $latency = [Math]::Round($watch.Elapsed.TotalMilliseconds, 2)
                     $latencies += [double]$latency
                     if ($path -eq $largePath) { $largeLatencyMs = $latency }
-                    $parsed = $response.Content | ConvertFrom-Json
-                    $verdict = [string]$parsed.decision.verdict
+                    $verdict = [string]$scan.decision.verdict
                     if (-not $verdicts.ContainsKey($verdict)) { $verdicts[$verdict] = 0 }
                     $verdicts[$verdict]++
                 }
@@ -246,7 +322,7 @@ try {
                 }
             }
             $overall.Stop()
-            try { $after = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -TimeoutSec 5 } catch { }
+            try { $after = Invoke-Ipc -Operation 'Status' } catch { }
             $sorted = @($latencies | Sort-Object)
             $delta = if ($null -ne $before -and $null -ne $after) {
                 [ordered]@{
@@ -283,6 +359,9 @@ try {
 finally {
     if ($null -ne $loadDir -and (Test-Path -LiteralPath $loadDir)) {
         Remove-Item -LiteralPath $loadDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $scanRoot) {
+        Remove-Item -LiteralPath $scanRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($null -ne $uiProcess) {
         Stop-Process -Id $uiProcess.Id -Force -ErrorAction SilentlyContinue
@@ -326,7 +405,7 @@ $result = [ordered]@{
     samples              = $samples.Count
     serviceStatus        = $status
     load                 = $load
-    notes                = 'Fase de reposo sin escaneos manuales. La fase de carga usa ficheros sintéticos no ejecutables creados y borrados por el script. WebView2 solo se mide si Aegis.UI.exe está en ejecución y no se suma a la RAM del servicio. ETW/WFP pueden estar degradados sin privilegios de administrador.'
+    notes                = 'Fase de reposo sin escaneos manuales. La fase de carga usa ficheros sintéticos no ejecutables creados y borrados por el script en una raíz temporal permitida por ScanPath. Status y ScanPath viajan por la Named Pipe local; HTTP solo /healthz. WebView2 solo se mide si Aegis.UI.exe está en ejecución y no se suma a la RAM del servicio. ETW/WFP pueden estar degradados sin privilegios de administrador.'
 }
 $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
 

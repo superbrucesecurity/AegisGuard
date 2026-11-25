@@ -78,6 +78,21 @@ public sealed class IntelPackageTests : IDisposable
     }
 
     [Fact]
+    public void ConfiguredKeyPinIsEnforcedByThePackageVerifier()
+    {
+        var key = CreateKey();
+        WritePackage(key, "1.2.3", "abc123");
+        var pin = KeyHash(key);
+
+        Assert.True(IntelPackage.TryVerify(_package, pin, out _, out var okError), okError);
+        Assert.False(IntelPackage.TryVerify(_package, new string('0', 64), out var rejected, out var error));
+        Assert.Null(rejected);
+        Assert.Contains("clave", error, StringComparison.Ordinal);
+        Assert.False(IntelPackage.TryVerify(_package, "xyz", out _, out error));
+        Assert.Contains("huella", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void HelperScriptSignsAndVerifiesRoundTrip()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -130,6 +145,12 @@ public sealed class IntelPackageTests : IDisposable
 
     private static ECDsa CreateKey() => ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
+    private static string KeyHash(ECDsa key)
+    {
+        var parameters = key.ExportParameters(false);
+        return Convert.ToHexString(SHA256.HashData([.. parameters.Q.X!, .. parameters.Q.Y!])).ToLowerInvariant();
+    }
+
     private void WritePackage(ECDsa key, string version, string id)
     {
         var intel = Path.Combine(_package, IntelPackage.IntelFileName);
@@ -158,7 +179,7 @@ public sealed class IntelPackageTests : IDisposable
         var parameters = key.ExportParameters(false);
         var x = Convert.ToHexString(parameters.Q.X!).ToLowerInvariant();
         var y = Convert.ToHexString(parameters.Q.Y!).ToLowerInvariant();
-        var keyHash = Convert.ToHexString(SHA256.HashData([.. parameters.Q.X!, .. parameters.Q.Y!])).ToLowerInvariant();
+        var keyHash = KeyHash(key);
         File.WriteAllText(Path.Combine(_package, IntelPackage.PublicKeyFileName), JsonSerializer.Serialize(new
         {
             algorithm = "ECDSA-P256",

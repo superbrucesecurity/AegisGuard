@@ -238,6 +238,9 @@ public sealed class MonitoringWorker : BackgroundService
                 {
                     Kind = EventKind.PersistenceChanged,
                     Subject = key,
+                    // El PID del encabezado ETW permite atribuir la persistencia
+                    // al proceso observado; si falta, no se correlaciona.
+                    ProcessId = GetProcessId(data),
                     BehaviorFlags = ["persistence_registry"],
                     Source = "etw-registry"
                 });

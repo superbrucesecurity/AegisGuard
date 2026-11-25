@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using Aegis.Core;
 using Aegis.Service;
@@ -20,31 +22,42 @@ public class PrivilegedIpcPolicyTests
         IsAdministrator: true,
         IsInteractive: true);
 
+    private static readonly PrivilegedOperation[] Mutaciones =
+    {
+        PrivilegedOperation.FirewallAddRule, PrivilegedOperation.FirewallRemoveRule,
+        PrivilegedOperation.QuarantineRestore, PrivilegedOperation.QuarantinePurge,
+        PrivilegedOperation.PolicyChange
+    };
+
     [Fact]
-    public void TodasLasOperacionesSensiblesExigenClearanceElevada()
+    public void SoloLasMutacionesExigenClearanceElevada()
     {
         foreach (PrivilegedOperation operation in Enum.GetValues<PrivilegedOperation>())
         {
-            Assert.Equal(ClientClearance.Elevated, PrivilegedOperationPolicy.Required(operation));
-            Assert.False(PrivilegedOperationPolicy.IsAllowed(Standard(), operation));
+            var mutacion = Mutaciones.Contains(operation);
+            Assert.Equal(mutacion ? ClientClearance.Elevated : ClientClearance.Standard,
+                PrivilegedOperationPolicy.Required(operation));
+            Assert.Equal(!mutacion, PrivilegedOperationPolicy.IsAllowed(Standard(), operation));
             Assert.True(PrivilegedOperationPolicy.IsAllowed(Elevated(), operation));
         }
     }
 
     [Fact]
-    public void TokenLimitadoNoAutorizaAunqueElSidSeaAdministrador()
+    public void TokenLimitadoNoAutorizaMutacionesAunqueElSidSeaAdministrador()
     {
         var limited = Elevated() with { Elevation = TokenElevationType.Limited };
-        foreach (PrivilegedOperation operation in Enum.GetValues<PrivilegedOperation>())
+        foreach (var operation in Mutaciones)
             Assert.False(PrivilegedOperationPolicy.IsAllowed(limited, operation));
+        Assert.True(PrivilegedOperationPolicy.IsAllowed(limited, PrivilegedOperation.Status));
         Assert.Contains("limitado", PrivilegedOperationPolicy.DenialReason(limited, PrivilegedOperation.PolicyChange));
     }
 
     [Fact]
-    public void IntegridadMediaNoAutorizaAunqueLaElevacionSeaCompleta()
+    public void IntegridadMediaAutorizaLecturasPeroNoMutaciones()
     {
         var medium = Elevated() with { IntegrityRid = NativeClientIdentity.MediumIntegrityRid };
         Assert.False(PrivilegedOperationPolicy.IsAllowed(medium, PrivilegedOperation.FirewallAddRule));
+        Assert.True(PrivilegedOperationPolicy.IsAllowed(medium, PrivilegedOperation.Status));
         Assert.Equal(ClientClearance.Standard, medium.Clearance);
     }
 
@@ -136,6 +149,77 @@ public class PrivilegedIpcPolicyTests
         finally
         {
             Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", previous);
+        }
+    }
+
+    [Fact]
+    public void UnSidDistintoDelInstaladoNoEstaAutorizado()
+    {
+        const string installed = "S-1-5-21-100-200-300-1001";
+        Assert.True(PrivilegedOperationPolicy.IsAuthorizedSid(Elevated(), installed));
+        Assert.False(PrivilegedOperationPolicy.IsAuthorizedSid(Elevated() with { Sid = "S-1-5-21-9" }, installed));
+        Assert.False(PrivilegedOperationPolicy.IsAuthorizedSid(Elevated(), string.Empty));
+    }
+
+    [Fact]
+    public void LaDaclDelPipeNoConcedeAccesoATodosLosUsuariosInteractivos()
+    {
+        const string installed = "S-1-5-21-100-200-300-1001";
+        var sddl = PrivilegedIpcServer.BuildSecurity(installed).GetSecurityDescriptorSddlForm(
+            AccessControlSections.Access);
+        var interactive = new SecurityIdentifier(WellKnownSidType.InteractiveSid, null).Value;
+        Assert.DoesNotContain(interactive, sddl, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(installed, sddl, StringComparison.OrdinalIgnoreCase);
+        // SDDL usa el alias SY para LOCAL SYSTEM, no el SID literal.
+        Assert.Contains(";SY)", sddl, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ElSidDeLaInstalacionEsObligatorioParaAbrirElCanal()
+    {
+        var previous = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
+        try
+        {
+            Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", null);
+            Assert.Throws<InvalidOperationException>(AegisIpcNames.RequireConfiguredAuthorizedSid);
+            Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", "no-es-un-sid");
+            Assert.Throws<InvalidOperationException>(AegisIpcNames.RequireConfiguredAuthorizedSid);
+            Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", "S-1-5-21-100-200-300-1001");
+            Assert.Equal("S-1-5-21-100-200-300-1001", AegisIpcNames.RequireConfiguredAuthorizedSid());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", previous);
+        }
+    }
+
+    [Fact]
+    public void ElAnalisisNoAceptaRutasDelEstadoNiDelSistema()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "aegis-scan-policy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var sample = Path.Combine(root, "sample.txt");
+            File.WriteAllText(sample, "inocuo");
+            Assert.True(ScanPathPolicy.IsAllowed(sample, new[] { root }, out var error));
+            Assert.Equal(string.Empty, error);
+
+            var dataFile = Path.Combine(AegisPaths.DataRoot, "config.json");
+            Assert.False(ScanPathPolicy.IsAllowed(dataFile, new[] { root }, out error));
+            Assert.Contains("estado", error);
+
+            var systemFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows), "system.ini");
+            Assert.False(ScanPathPolicy.IsAllowed(systemFile, new[] { root }, out error));
+            Assert.Contains("protegida", error);
+
+            Assert.False(ScanPathPolicy.IsAllowed(Path.Combine(root, "*.txt"), new[] { root }, out error));
+            Assert.Contains("comodines", error);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
         }
     }
 }

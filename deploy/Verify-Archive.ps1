@@ -5,6 +5,7 @@ param(
     [string]$StampPath,
     [string]$ExpectedSignerSha256,
     [switch]$AllowUntrustedTestSigner,
+    [switch]$AllowUnpinnedSigner,
     [switch]$SkipPackageContents
 )
 
@@ -51,7 +52,13 @@ $signerSha = Get-CertificateSha256 $signature.SignerCertificate
 
 $expected = $ExpectedSignerSha256
 if ([string]::IsNullOrWhiteSpace($expected)) { $expected = $env:AEGIS_RELEASE_SIGNER_SHA256 }
-if (-not [string]::IsNullOrWhiteSpace($expected)) {
+if ([string]::IsNullOrWhiteSpace($expected)) {
+    if (-not $AllowUnpinnedSigner) {
+        throw 'No se fijó la huella SHA-256 del firmante del ZIP. Pase -ExpectedSignerSha256 o defina AEGIS_RELEASE_SIGNER_SHA256; solo se permite omitirla con -AllowUnpinnedSigner en laboratorio.'
+    }
+    Write-Warning 'Modo laboratorio: no se aplica key pinning externo al ZIP; no publique este paquete.'
+}
+else {
     if ($expected -notmatch '^[0-9a-fA-F]{64}$') { throw 'ExpectedSignerSha256 no es un SHA-256 válido.' }
     if ($expected.ToLowerInvariant() -ne $signerSha) {
         throw "El sello usa $signerSha, pero la huella fijada es $($expected.ToLowerInvariant())."

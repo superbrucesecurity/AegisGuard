@@ -94,7 +94,7 @@ Límites honestos: la firma Authenticode se generó sin marca de tiempo RFC3161,
 
 ### Paquete descargable
 
-`deploy/Package-Release.ps1` crea un único artefacto a partir de una etapa ya firmada. Antes de comprimir, ejecuta `Verify-Release.ps1`; si la carpeta no supera la verificación, no genera el ZIP. El resultado es `AegisGuard-<versión>-win-x64.zip`, un `.sha256` informativo y `AegisGuard-<versión>-win-x64.stamp.ps1`. El sello está firmado con Authenticode por el **mismo certificado** que el paquete interior y declara el SHA-256 del ZIP y la huella del firmante.
+`deploy/Package-Release.ps1` crea un único artefacto a partir de una etapa ya firmada. Antes de comprimir, ejecuta `Verify-Release.ps1`; si la carpeta no supera la verificación, no genera el ZIP. El resultado es `AegisGuard-<versión>-win-x64.zip`, un `.sha256` informativo y `AegisGuard-<versión>-win-x64.stamp.ps1`. El sello está firmado con Authenticode por el **mismo certificado** que el paquete interior y declara el SHA-256 del ZIP y la huella del firmante. La etapa incluye `deploy\` con `Setup-Aegis.ps1`, `install.cmd`, `finish.cmd`, `Verify-Release.ps1`, `Verify-Archive.ps1`, `uninstall.ps1`, `uninstall.cmd`, `Rollback.ps1` y `rollback.cmd`, para que el ZIP sea autocontenido.
 
 Authenticode no puede firmar un ZIP de forma que Windows lo valide como si fuera un ejecutable; por eso la prueba es el sello independiente, no una supuesta firma directa del ZIP. El `.sha256` es solo una comodidad: puede modificarse, mientras que el sello firmado no.
 

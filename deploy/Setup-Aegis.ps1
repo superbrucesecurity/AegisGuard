@@ -137,6 +137,21 @@ try {
         $uiCmd = "@echo off`r`nset `"AEGIS_DATA_DIR=$DataDir`"`r`nstart `"`" /B `"$uiExe`"`r`n"
         [IO.File]::WriteAllText((Join-Path $stage 'run-service.cmd'), $serviceCmd)
         [IO.File]::WriteAllText((Join-Path $stage 'run-ui.cmd'), $uiCmd)
+
+        # El paquete descargable debe ser autocontenido: incluye instalación,
+        # verificación, desinstalación y rollback sin depender del repositorio.
+        $deployDest = Join-Path $stage 'deploy'
+        New-Item -ItemType Directory -Force -Path $deployDest | Out-Null
+        foreach ($script in @(
+            'Setup-Aegis.ps1', 'install.cmd', 'finish.cmd', 'uninstall.cmd', 'uninstall.ps1',
+            'Register-Service.ps1', 'Create-Shortcuts.ps1',
+            'Verify-Release.ps1', 'Verify-Archive.ps1',
+            'Rollback.ps1', 'rollback.cmd'
+        )) {
+            $source = Join-Path $PSScriptRoot $script
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Falta el script de despliegue $script" }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $deployDest $script) -Force
+        }
     }
 
     if ($StageOnly) {

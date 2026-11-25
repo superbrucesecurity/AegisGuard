@@ -69,7 +69,7 @@ La SPA se verificó en navegador contra el servicio instalado, inyectando el tok
 
 - `Directory.Build.props` sigue siendo la única fuente del número `3.0.0`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
 - `deploy/Generate-Sbom.ps1` consulta `dotnet list package --include-transitive --format json` y genera un SPDX 2.3 con 50 paquetes (producto, dependencias de ejecución y dependencias de test marcadas como `DEV_DEPENDENCY_OF`). Las licencias se toman de los `.nuspec` reales de la caché NuGet; WebView2 se identifica como `BSD-3-Clause` y su texto se copia a `licenses/`.
-- `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. Las dependencias conservan sus licencias; no se concede reuso del código de Aegis Guard sin acuerdo escrito.
+- `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. `EULA-EVALUATION.md` concede una licencia limitada para probar el paquete firmado sin uso comercial; prohíbe distribuirlo, comercializarlo y modificar el código sin permiso escrito.
 - `finish.cmd` acepta opcionalmente `[INTELPACKAGEDIR]` e `[INTELKEYHASH]` (o las variables de entorno del mismo nombre) y `Register-Service.ps1` valida ambas antes de escribirlas en el entorno del SCM. Así el paquete firmado de la Fase 4 puede usarse también en una instalación gestionada.
 - Verificado con build Release sin advertencias, 127 tests y un ciclo aislado `install.cmd` → `finish.cmd`: servicio `Running`/`Auto`, `managedByScm=true`, `VERSION=3.0.0`, SBOM/avisos/licencias presentes, `intelStatus=verified:phase5-install`, 1 hash, 5 reglas y `droppedEvents=0`. La desinstalación limpió el servicio de prueba.
 
@@ -167,6 +167,10 @@ También puede usar **Ayuda → Ejecutar prueba EICAR**: el servicio escribe la 
 - [Operaciones](docs/OPERACIONES.md)
 - [Seguridad y privacidad](docs/SEGURIDAD.md)
 - [Benchmarks](docs/BENCHMARKS.md)
+
+## Licencia de evaluación
+
+Puedes descargar y probar el paquete firmado siempre que lo uses solo para evaluación no comercial en equipos bajo tu responsabilidad. **No puedes distribuirlo, venderlo ni modificar el código o los binarios sin permiso escrito.** La firma Authenticode identifica al publicador, pero no concede derechos por sí sola. Las condiciones completas están en [EULA-EVALUATION.md](EULA-EVALUATION.md); las dependencias de terceros conservan sus propias licencias en `THIRD-PARTY-NOTICES.md` y `licenses/`.
 
 ## Configuración local
 

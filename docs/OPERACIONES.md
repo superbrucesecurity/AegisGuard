@@ -94,10 +94,10 @@ Límites honestos: la firma Authenticode se generó sin marca de tiempo RFC3161,
 
 ## Trazabilidad de la distribución
 
-`deploy/Generate-Sbom.ps1` genera `SBOM.spdx.json` (SPDX 2.3) y `THIRD-PARTY-NOTICES.md` a partir de `dotnet list package --include-transitive --format json` y de los `.nuspec` reales de la caché NuGet. El instalador copia ambos archivos, `LICENSE`, `VERSION` y los textos de licencias de terceros (`licenses/`) al directorio de instalación.
+`deploy/Generate-Sbom.ps1` genera `SBOM.spdx.json` (SPDX 2.3) y `THIRD-PARTY-NOTICES.md` a partir de `dotnet list package --include-transitive --format json` y de los `.nuspec` reales de la caché NuGet. El instalador copia ambos archivos, `LICENSE`, `EULA-EVALUATION.md`, `VERSION` y los textos de licencias de terceros (`licenses/`) al directorio de instalación.
 
 - `Directory.Build.props` es la única fuente del número `3.0.0`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. No hay versiones duplicadas en los scripts.
-- `LICENSE` declara el código propietario, con todos los derechos reservados. El código se publica únicamente para transparencia y verificación, sin permiso de reuso sin acuerdo escrito. Las dependencias conservan sus propias licencias; consulte `THIRD-PARTY-NOTICES.md`.
+- `LICENSE` declara el código propietario, con todos los derechos reservados. `EULA-EVALUATION.md` concede una licencia limitada, no transferible y revocable para evaluar el paquete firmado sin fines comerciales; prohíbe distribuirlo, revenderlo, comercializarlo y modificar el código o los binarios sin acuerdo escrito. El código se publica únicamente para transparencia y verificación. Las dependencias conservan sus propias licencias; consulte `THIRD-PARTY-NOTICES.md`.
 - Para regenerar el SBOM después de cambiar dependencias: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Generate-Sbom.ps1`. Revise el diff: las entradas `NOASSERTION` requieren revisión manual del paquete.
 - `finish.cmd [INSTALLDIR] [DATADIR] [TASKPREFIX] [SHORTCUTNAME] [SERVICENAME] [INTELPACKAGEDIR] [INTELKEYHASH]` acepta opcionalmente el paquete firmado de la Fase 4. Si no se pasan los argumentos, se usan las variables de entorno `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256`. `Register-Service.ps1` exige ambas o ninguna y valida el SHA-256 de 64 hexadecimales antes de escribirlas en el entorno del SCM.
 

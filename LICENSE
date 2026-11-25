@@ -1,12 +1,21 @@
 Aegis Guard
 Copyright (c) 2026 superbrucesecurity. All rights reserved.
 
-Unlicensed proprietary software.
+Limited evaluation license.
 
-No permission is granted to use, copy, modify, distribute, sublicense, or
-create derivative works of this software, in source or binary form, except as
-expressly granted in a separate written agreement signed by the copyright
+A limited, non-exclusive, non-transferable and revocable license is granted to
+download, install and evaluate an unmodified, Authenticode-signed Aegis Guard
+release for non-commercial testing, subject to EULA-EVALUATION.md.
+
+No permission is granted to copy, redistribute, publish, resell, sublicense,
+commercialize, modify, adapt, decompile or create derivative works of this
+software, in source or binary form, except as expressly granted in
+EULA-EVALUATION.md or in a separate written agreement signed by the copyright
 holder.
+
+Use in production, managed services, bundled products or commercial offerings
+requires a separate written agreement. The Authenticode signature identifies
+the publisher; it does not grant broader rights.
 
 The unmodified source is published for transparency and verification only.
 Third-party components remain subject to their own licenses; see

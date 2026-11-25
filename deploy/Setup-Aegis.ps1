@@ -117,7 +117,7 @@ try {
         if ($props -notmatch '<Version>([^<]+)</Version>') { throw 'No se encontró <Version> en Directory.Build.props.' }
         $version = $Matches[1].Trim()
         [IO.File]::WriteAllText((Join-Path $stage 'VERSION'), $version + "`r`n")
-        foreach ($document in @('LICENSE', 'SBOM.spdx.json', 'THIRD-PARTY-NOTICES.md')) {
+        foreach ($document in @('LICENSE', 'EULA-EVALUATION.md', 'SBOM.spdx.json', 'THIRD-PARTY-NOTICES.md')) {
             $source = Join-Path $root $document
             if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination (Join-Path $stage $document) -Force }
         }

@@ -54,4 +54,4 @@ Generado para Aegis Guard 3.0.0 con `deploy/Generate-Sbom.ps1`. Las licencias se
 | xunit.extensibility.execution | 2.9.3 | Apache-2.0 | test | - |
 | xunit.runner.visualstudio | 3.1.4 | Apache-2.0 | test | - |
 
-El código de Aegis Guard es propietario y se publica solo para transparencia y verificación; consulte LICENSE. Las dependencias de terceros conservan sus propias licencias. El producto no usa credenciales, telemetría ni servicios remotos.
+El código de Aegis Guard es propietario y se publica solo para transparencia y verificación; consulte LICENSE y EULA-EVALUATION.md. La evaluación no comercial del paquete firmado está permitida; la distribución, la comercialización y la modificación requieren permiso escrito. Las dependencias de terceros conservan sus propias licencias. El producto no usa credenciales, telemetría ni servicios remotos.

@@ -42,5 +42,17 @@ jobs:
           if-no-files-found: warn
 
       - name: SBOM, deploy scripts and unsigned stage
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Check-Ci.ps1
         shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'aegis-check-ci.log'
+          try {
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Check-Ci.ps1 2>&1 |
+              Tee-Object -FilePath $log
+            if ($LASTEXITCODE -ne 0) { throw "Check-Ci.ps1 terminó con código $LASTEXITCODE" }
+          }
+          catch {
+            $tail = if (Test-Path -LiteralPath $log) { (Get-Content -LiteralPath $log -Tail 80) -join "`n" } else { '' }
+            $message = ($_.Exception.Message + "`n" + $tail) -replace "`r?`n", '%0A'
+            Write-Host "::error::Check-Ci.ps1 falló: $message"
+            exit 1
+          }

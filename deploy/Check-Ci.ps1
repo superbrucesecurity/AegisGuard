@@ -128,7 +128,15 @@ try {
 
     $smokeData = Join-Path $work 'smoke-data'
     New-Item -ItemType Directory -Force -Path $smokeData | Out-Null
-    $envNames = @('AEGIS_DATA_DIR', 'AEGIS_RULES_DIR', 'AEGIS_UI_USER_SID', 'AEGIS_HTTP_PORT')
+
+    # El monitor vigila también TEMP (AegisProfilePaths.UserDirectories). Si el
+    # servicio compartiera el TEMP del verificador, la creación de la etapa y
+    # de la muestra generaría eventos propios y los contadores dejarían de ser
+    # una prueba de que POST /api/scan no persiste. Se le da un TEMP vacío.
+    $isolatedTemp = Join-Path $work 'service-temp'
+    New-Item -ItemType Directory -Force -Path $isolatedTemp | Out-Null
+
+    $envNames = @('AEGIS_DATA_DIR', 'AEGIS_RULES_DIR', 'AEGIS_UI_USER_SID', 'AEGIS_HTTP_PORT', 'TMP', 'TEMP')
     $previousEnv = @{}
     foreach ($name in $envNames) { $previousEnv[$name] = [Environment]::GetEnvironmentVariable($name) }
     $process = $null
@@ -140,6 +148,8 @@ try {
         [Environment]::SetEnvironmentVariable('AEGIS_UI_USER_SID',
             [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
         [Environment]::SetEnvironmentVariable('AEGIS_HTTP_PORT', [string]$smokePort)
+        [Environment]::SetEnvironmentVariable('TMP', $isolatedTemp)
+        [Environment]::SetEnvironmentVariable('TEMP', $isolatedTemp)
 
         $serviceExe = Join-Path $stage 'Aegis.Service\Aegis.Service.exe'
         $process = Start-Process -FilePath $serviceExe -WorkingDirectory (Join-Path $stage 'Aegis.Service') `

@@ -69,4 +69,71 @@ public sealed class DetectionPipelineTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task ReadOnlyScanUsesTheRealEngineWithoutPersistingOrRemediating()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(Path.GetTempPath(), $"aegis-readonly-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var file = Path.Combine(root, ".payload.ps1");
+        var script = "[Convert]::FromBase64String('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'); iex($x); WScript.Shell";
+        await File.WriteAllTextAsync(file, script);
+
+        try
+        {
+            var state = new RuntimeState();
+            state.UpdatePolicy(new PolicySettings
+            {
+                LearningMode = false,
+                AutoQuarantine = true,
+                AutoBlockNetwork = true,
+                MonitorThreshold = 25,
+                BlockThreshold = 58,
+                QuarantineThreshold = 80,
+                MaxEvents = 100
+            });
+            var reputation = new LocalReputation(Path.Combine(root, "reputation.json"));
+            var store = new EventStore(root, 100);
+            await store.InitializeAsync();
+            var quarantine = new QuarantineManager(root);
+            await quarantine.InitializeAsync();
+            var canary = new RansomwareCanary(root);
+            canary.Initialize();
+
+            var pipeline = new DetectionPipeline(
+                new YaraLiteEngine(),
+                new ThreatIntel(),
+                quarantine,
+                store,
+                state,
+                reputation,
+                new FirewallManager(),
+                canary,
+                NullLogger<DetectionPipeline>.Instance);
+
+            var threat = await pipeline.ScanPathReadOnlyAsync(file);
+
+            // Motor real: la decisión no es un valor inventado ni "Allow" por omisión.
+            Assert.Equal(64, threat.Observation.Sha256!.Length);
+            Assert.Contains(threat.Observation.RuleMatches, m => m.Category == "script");
+            Assert.NotEqual(Verdict.Allow, threat.Decision.Verdict);
+
+            // Ningún efecto secundario, aunque la política permita remediar.
+            Assert.False(File.Exists(Path.Combine(root, "events.jsonl")));
+            Assert.False(File.Exists(Path.Combine(root, "threats.jsonl")));
+            Assert.False(File.Exists(Path.Combine(root, "reputation.json")));
+            Assert.True(File.Exists(file));
+            Assert.Empty(await quarantine.ListAsync());
+            var status = state.Snapshot(firewallActive: true);
+            Assert.Equal(0, status.EventsTotal);
+            Assert.Equal(0, status.ThreatsTotal);
+            Assert.Equal(0, status.BlockedTotal);
+            Assert.Equal(0, status.QuarantinedTotal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

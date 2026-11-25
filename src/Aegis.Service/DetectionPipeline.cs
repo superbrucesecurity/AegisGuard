@@ -167,8 +167,9 @@ public sealed class DetectionPipeline
     /// </summary>
     public async Task<ThreatRecord> ScanPathReadOnlyAsync(string path, CancellationToken ct = default)
     {
-        var decision = await EvaluateAsync(ManualObservation(path), ct).ConfigureAwait(false);
-        return new ThreatRecord { Decision = decision };
+        var observation = ManualObservation(path);
+        var decision = await EvaluateAsync(observation, ct).ConfigureAwait(false);
+        return new ThreatRecord { Observation = observation, Decision = decision };
     }
 
     private static Observation ManualObservation(string path)

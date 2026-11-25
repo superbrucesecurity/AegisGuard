@@ -9,7 +9,6 @@ namespace Aegis.UI;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardUrl = "http://127.0.0.1:8787/";
     private readonly CancellationTokenSource _retryCts = new();
     private int _retryCount;
 
@@ -44,7 +43,7 @@ public partial class MainWindow : Window
 
             Browser.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
             Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
-            Browser.CoreWebView2.Navigate(DashboardUrl);
+            Browser.CoreWebView2.Navigate(AegisHttpEndpoints.DashboardUrl());
         }
         catch (Exception ex)
         {
@@ -55,9 +54,7 @@ public partial class MainWindow : Window
     private void CoreWebView2_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
         if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttp ||
-            !string.Equals(uri.Host, "127.0.0.1", StringComparison.Ordinal) ||
-            uri.Port != 8787)
+            !AegisHttpEndpoints.IsLocalDashboard(uri))
         {
             e.Cancel = true;
         }
@@ -88,7 +85,7 @@ public partial class MainWindow : Window
             return;
         }
         if (!_retryCts.IsCancellationRequested && Browser.CoreWebView2 is not null)
-            Browser.CoreWebView2.Navigate(DashboardUrl);
+            Browser.CoreWebView2.Navigate(AegisHttpEndpoints.DashboardUrl());
     }
 
     private void TitleBar_Drag(object sender, MouseButtonEventArgs e)

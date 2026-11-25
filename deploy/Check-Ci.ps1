@@ -118,37 +118,55 @@ try {
 
     # 4. El análisis manual por HTTP debe usar el motor real sin persistir ni
     #    remediar. Se comprueba contra el servicio publicado, no contra el
-    #    código fuente, para cubrir también el contenido de la etapa.
-    $existingListener = @(Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue)
-    Assert-True ($existingListener.Count -eq 0) 'El puerto 8787 ya está ocupado; no se puede ejecutar la prueba HTTP.'
+    #    código fuente, para cubrir también el contenido de la etapa. Se elige
+    #    un puerto libre: un runner puede tener otro proceso en el 8787.
+    $portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $portProbe.Start()
+    $smokePort = $portProbe.LocalEndpoint.Port
+    $portProbe.Stop()
+    $baseUrl = "http://127.0.0.1:$smokePort"
 
     $smokeData = Join-Path $work 'smoke-data'
     New-Item -ItemType Directory -Force -Path $smokeData | Out-Null
-    $envNames = @('AEGIS_DATA_DIR', 'AEGIS_RULES_DIR', 'AEGIS_UI_USER_SID')
+    $envNames = @('AEGIS_DATA_DIR', 'AEGIS_RULES_DIR', 'AEGIS_UI_USER_SID', 'AEGIS_HTTP_PORT')
     $previousEnv = @{}
     foreach ($name in $envNames) { $previousEnv[$name] = [Environment]::GetEnvironmentVariable($name) }
     $process = $null
+    $stdoutPath = Join-Path $work 'service.stdout.log'
+    $stderrPath = Join-Path $work 'service.stderr.log'
     try {
         [Environment]::SetEnvironmentVariable('AEGIS_DATA_DIR', $smokeData)
         [Environment]::SetEnvironmentVariable('AEGIS_RULES_DIR', (Join-Path $stage 'rules'))
         [Environment]::SetEnvironmentVariable('AEGIS_UI_USER_SID',
             [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+        [Environment]::SetEnvironmentVariable('AEGIS_HTTP_PORT', [string]$smokePort)
 
         $serviceExe = Join-Path $stage 'Aegis.Service\Aegis.Service.exe'
         $process = Start-Process -FilePath $serviceExe -WorkingDirectory (Join-Path $stage 'Aegis.Service') `
-            -PassThru -WindowStyle Hidden
+            -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
         $health = $null
-        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        for ($attempt = 0; $attempt -lt 80; $attempt++) {
             try {
-                $health = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -TimeoutSec 2
+                $health = Invoke-RestMethod -UseBasicParsing "$baseUrl/api/health" -TimeoutSec 2
                 break
             }
-            catch { Start-Sleep -Milliseconds 250 }
+            catch {
+                if ($process.HasExited) { break }
+                Start-Sleep -Milliseconds 500
+            }
         }
-        Assert-True ($null -ne $health) 'El servicio publicado no respondió /api/health.'
+        if ($null -eq $health) {
+            foreach ($log in @($stdoutPath, $stderrPath)) {
+                if (Test-Path -LiteralPath $log) {
+                    Write-Host "--- $log ---"
+                    Get-Content -LiteralPath $log -Tail 40
+                }
+            }
+            throw "El servicio publicado no respondió $baseUrl/api/health en el puerto aislado $smokePort."
+        }
 
         function Get-Api([string]$Path) {
-            Invoke-RestMethod ('http://127.0.0.1:8787' + $Path) -TimeoutSec 5
+            Invoke-RestMethod -UseBasicParsing ($baseUrl + $Path) -TimeoutSec 5
         }
 
         $beforeStatus = Get-Api '/api/status'
@@ -160,7 +178,7 @@ try {
         $sample = Join-Path $smokeData 'scan-sample.txt'
         [IO.File]::WriteAllText($sample, 'texto inocuo para comprobar que POST /api/scan no persiste ni remedia.')
         $body = @{ path = $sample } | ConvertTo-Json -Compress
-        $scan = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8787/api/scan' `
+        $scan = Invoke-RestMethod -UseBasicParsing -Method Post -Uri "$baseUrl/api/scan" `
             -Body $body -ContentType 'application/json' -TimeoutSec 10
         Assert-True ($null -ne $scan.decision) 'POST /api/scan no devolvió una decisión real.'
 
@@ -183,7 +201,7 @@ try {
                 "POST /api/scan creó $name; la petición no debe persistir estado."
         }
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $smokeData 'ui-token'))) 'Apareció ui-token durante la prueba.'
-        Write-Host 'POST /api/scan evaluó el fichero sin persistir, remediar ni crear credenciales.'
+        Write-Host "POST /api/scan evaluó el fichero en $baseUrl sin persistir, remediar ni crear credenciales."
     }
     finally {
         if ($process -and -not $process.HasExited) {

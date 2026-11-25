@@ -8,6 +8,8 @@ Invoke-RestMethod http://127.0.0.1:8787/api/health
 Invoke-RestMethod http://127.0.0.1:8787/api/status
 ```
 
+El puerto por defecto es `8787`. Si se define `AEGIS_HTTP_PORT`, el servicio y la UI usan ese valor de forma coherente; modifique las URLs anteriores en consecuencia.
+
 `healthz` es público y solo confirma que el proceso responde; las rutas `/api` no exigen credenciales porque solo devuelven lecturas y análisis. No hay token local ni cabeceras `Bearer`. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección. `intelStatus` distingue `bundled`, `verified:<versión>` y `rejected:<motivo>`; un paquete rechazado no cambia por sí solo el estado de monitorización, pero deja la inteligencia opcional sin cargar y debe corregirse.
 
 El servicio se registra con `sc.exe create ... start= auto`, `binPath` directo al ejecutable y acciones de recuperación `restart/5000`, `restart/10000`, `restart/30000`. No usa `schtasks /SC ONLOGON`: el inicio no depende de que haya sesión. El evento de arranque y el apagado ordenado se escriben en el registro de eventos de Windows con el proveedor del nombre del servicio. `run-service.cmd` solo se conserva para diagnóstico manual.
@@ -26,7 +28,7 @@ dotnet test tests/Aegis.Checks/Aegis.Checks.csproj -c Release --no-build --nolog
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Check-Ci.ps1
 ```
 
-`Check-Ci.ps1` valida la sintaxis de los scripts de despliegue, regenera y compara SBOM/avisos, crea una etapa sin firmar con `Setup-Aegis.ps1 -StageOnly` y comprueba VERSION, scripts copiados, SPA publicada y ausencia de `ui-token`. Después arranca el servicio desde esa etapa con un directorio de estado aislado y verifica que `POST /api/scan` no crea `events.jsonl`, `threats.jsonl` ni `reputation.json` y no cambia contadores, cuarentena ni reglas. No firma, no instala de forma persistente y no publica nada. La auditoría previa a una posible apertura de licencia está en [P1-LICENCIAS.md](P1-LICENCIAS.md).
+`Check-Ci.ps1` valida la sintaxis de los scripts de despliegue, regenera y compara SBOM/avisos, crea una etapa sin firmar con `Setup-Aegis.ps1 -StageOnly` y comprueba VERSION, scripts copiados, SPA publicada y ausencia de `ui-token`. Después arranca el servicio desde esa etapa con un directorio de estado aislado y un puerto de loopback libre (`AEGIS_HTTP_PORT`) y verifica que `POST /api/scan` no crea `events.jsonl`, `threats.jsonl` ni `reputation.json` y no cambia contadores, cuarentena ni reglas. No firma, no instala de forma persistente y no publica nada. La auditoría previa a una posible apertura de licencia está en [P1-LICENCIAS.md](P1-LICENCIAS.md).
 
 ## Validación aislada del instalador
 

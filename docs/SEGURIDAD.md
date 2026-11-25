@@ -16,7 +16,7 @@ El producto no usa claves de API, cuentas de usuario ni servicios de inferencia.
 - Cada solicitud y cada rechazo se registran en `privileged-audit.jsonl` con PID, SID, integridad, elevación y motivo. El registro se rota a 2 MiB y conserva ACL restringida.
 - Límites: 64 KiB por solicitud, 256 KiB por respuesta y una solicitud por conexión, cerrada después de responder.
 - CSP restrictiva, `X-Frame-Options: DENY`, `nosniff` y `no-referrer`.
-- WebView2 sin DevTools, menú contextual, autoguardado de contraseñas, autocompletado ni mensajería web. Se habilita un único host object (`aegis`) y la navegación queda fijada a `http://127.0.0.1:8787`.
+- WebView2 sin DevTools, menú contextual, autoguardado de contraseñas, autocompletado ni mensajería web. Se habilita un único host object (`aegis`) y la navegación queda fijada al extremo local compartido por servicio y UI (`http://127.0.0.1:8787`, o el puerto de `AEGIS_HTTP_PORT`).
 
 ## Servicio SCM y privilegios
 
@@ -82,5 +82,5 @@ La sustitución guarda la instalación anterior en `-BackupDir`, restringe su AC
 ## No hacer
 
 - No desactive Microsoft Defender, Bitdefender ni otro producto de seguridad para ejecutar las pruebas EICAR. Si **Ayuda → Ejecutar prueba EICAR** informa de que la muestra fue bloqueada antes del análisis, ese es el resultado: Aegis no la sustituye ni la presenta como detectada por su motor.
-- No exponga el puerto 8787 mediante reglas de firewall de entrada.
+- No exponga el puerto HTTP local (8787 por defecto, o `AEGIS_HTTP_PORT`) mediante reglas de firewall de entrada.
 - No interprete un veredicto `Allow` como garantía de inocuidad: es una decisión con umbrales locales, no una certificación.

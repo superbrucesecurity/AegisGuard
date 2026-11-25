@@ -7,7 +7,7 @@ Aegis.UI (WPF + WebView2)
     │  HTTP local (solo lecturas/análisis, sin credenciales)
     │  host object 'aegis' → UAC → Named Pipe con ACL (mutaciones)
     ▼
-Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
+Aegis.Service (ASP.NET Core, 127.0.0.1:8787 por defecto o `AEGIS_HTTP_PORT`)
     ├── MonitoringWorker (ETW, FileSystemWatcher, canarios)
     ├── DetectionPipeline (enriquecimiento → decisión → remediación)
     ├── DecisionEngine + RemediationPolicy (deterministas, 100 % local)
@@ -21,7 +21,7 @@ Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
     └── LocalFileAcl (ACL restringida de estado, claves y cuarentena)
 ```
 
-No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto TCP expuesto es el enlace local de loopback `127.0.0.1:8787`; la superficie administrativa es una Named Pipe con nombre derivado del SID autorizado por la instalación y ACL explícita. La UI no lee directamente archivos de estado: para eso usa la API local. La única excepción es el archivo de respuesta creado en `%TEMP%` por el proceso elevado, con ACL que permite leer solo al solicitante original y al propio proceso elevado.
+No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto TCP expuesto es el enlace local de loopback `127.0.0.1:8787` por defecto, configurable con `AEGIS_HTTP_PORT` para pruebas aisladas; la superficie administrativa es una Named Pipe con nombre derivado del SID autorizado por la instalación y ACL explícita. La UI no lee directamente archivos de estado: para eso usa la API local. La única excepción es el archivo de respuesta creado en `%TEMP%` por el proceso elevado, con ACL que permite leer solo al solicitante original y al propio proceso elevado.
 
 En las instalaciones gestionadas, `Aegis.Service.exe` se ejecuta como servicio SCM `AegisGuardSvc` (`start= auto`, recuperación escalonada, proveedor de eventos con el mismo nombre). `UseWindowsService` conecta el ciclo de vida con stop/shutdown; `AegisProfilePaths` traduce el SID del usuario interactivo registrado por el instalador a sus carpetas Desktop/Documentos/Downloads, necesarias porque el perfil de `LocalSystem` no las contiene. Sin ese mapeo los watchers quedan degradados.
 

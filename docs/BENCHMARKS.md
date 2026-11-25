@@ -10,7 +10,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Measure-Aegis.p
 
 El script:
 
-1. Reutiliza el servicio si ya está escuchando en `127.0.0.1:8787`; si no, inicia el binario de la configuración indicada (`Release` por defecto) con un `AEGIS_DATA_DIR` aislado. Si inicia el proceso, mide el tiempo hasta `/healthz` y solo entonces informa `startupMs`; si lo reutiliza, declara `startupMeasured=false` en lugar de inventar el arranque.
+1. Reutiliza el servicio si ya está escuchando en `127.0.0.1:8787` (o en el puerto de `AEGIS_HTTP_PORT`); si no, inicia el binario de la configuración indicada (`Release` por defecto) con un `AEGIS_DATA_DIR` aislado. Si inicia el proceso, mide el tiempo hasta `/healthz` y solo entonces informa `startupMs`; si lo reutiliza, declara `startupMeasured=false` en lugar de inventar el arranque.
 2. Muestrea cada segundo CPU (dividida entre `[Environment]::ProcessorCount`), `WorkingSet64`, bytes privados, lecturas/escrituras acumuladas del árbol de procesos (`Win32_Process.ReadTransferCount`/`WriteTransferCount`) y número de procesos del servicio.
 3. Con `-LaunchUi`, inicia `Aegis.UI.exe` y cuenta sus procesos `msedgewebview2.exe` descendientes y su RAM. Esa memoria se informa por separado: no se suma a la del servicio. Al terminar detiene solo la UI y los WebView2 que creó.
 4. Consulta `/api/status` antes de la fase de carga para conservar la línea base real de monitorización, ETW, firewall, colas y contadores.

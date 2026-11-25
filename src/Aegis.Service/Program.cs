@@ -29,7 +29,8 @@ if (OperatingSystem.IsWindows())
         builder.Logging.AddEventLog(settings => settings.SourceName = eventSource);
     builder.Host.UseWindowsService(options => options.ServiceName = serviceName);
 }
-builder.WebHost.UseUrls("http://127.0.0.1:8787");
+var httpBase = AegisHttpEndpoints.BaseUrl();
+builder.WebHost.UseUrls(httpBase);
 
 builder.Services.AddSingleton(new RuntimeState());
 builder.Services.AddSingleton(new LocalReputation(Path.Combine(appRoot, "reputation.json")));
@@ -140,7 +141,7 @@ app.Use(async (context, next) =>
         // y solicitudes cross-site desde páginas del propio equipo.
         var origin = context.Request.Headers.Origin.ToString();
         if (!string.IsNullOrEmpty(origin) &&
-            !string.Equals(origin, "http://127.0.0.1:8787", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(origin, httpBase, StringComparison.OrdinalIgnoreCase))
         {
             context.Response.StatusCode = 403;
             return;

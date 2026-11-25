@@ -21,7 +21,7 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Motor de decisión determinista | Implementado | Allow / Monitor / Block / Quarantine con riesgo y confianza. |
 | UI premium WebView2 | Implementado | Dashboard, firewall, amenazas, cuarentena, historial, ajustes, ayuda. |
 | Instalador / desinstalador | Implementado | `deploy/install.cmd` → `Setup-Aegis.ps1`, `deploy/finish.cmd`, `deploy/uninstall.cmd`. |
-| Pruebas automáticas | 127 casos | `tests/Aegis.Checks`. |
+| Pruebas automáticas | 149 casos | `tests/Aegis.Checks`. |
 | SBOM, avisos y versionado | Implementado | SPDX 2.3, avisos de terceros, `VERSION` y licencia del proyecto. |
 
 ### `dev/v3.0` · Fase 1 — correcciones críticas verificadas
@@ -44,7 +44,7 @@ Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo u
 
 Ciclo verificado en ruta aislada: `install.cmd` → `finish.cmd` → servicio `Running`/`Auto` → API `3.0.0` → `uninstall.cmd`. El estado final fue `learning` con `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `droppedEvents=0`, `coalescedEvents=5` y 9 entradas reales en el registro de eventos.
 
-La SPA se verificó en navegador contra el servicio instalado, inyectando el token igual que WebView2: muestra `v3.0.0 · motor local`, `Modo aprendizaje`, KPI `Bloqueos / cuarentenas = 0 / 0`, etiquetas `Servicio SCM: sí`, `Sin pérdida de eventos: sí` y el nombre del servicio en el estado del motor. Durante esa comprobación apareció y se corrigió un `ReferenceError` (`TOKEN` en lugar de `token`) que impedía la carga inicial de datos. No hubo errores de página ni respuestas HTTP ≥ 400 en el contexto de la SPA; el capturador de pantalla no se pudo inspeccionar visualmente con este modelo, por lo que la validación se apoyó en DOM y consola.
+La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 · motor local`, `Modo aprendizaje`, KPI `Bloqueos / cuarentenas = 0 / 0`, etiquetas `Servicio SCM: sí`, `Sin pérdida de eventos: sí` y el nombre del servicio en el estado del motor. Durante esa comprobación de Fase 2, con el mecanismo de credencial entonces vigente, apareció y se corrigió un `ReferenceError` que impedía la carga inicial de datos; no se presenta como verificación del canal P0. No hubo errores de página ni respuestas HTTP ≥ 400 en el contexto de la SPA; el capturador de pantalla no se pudo inspeccionar visualmente con este modelo, por lo que la validación se apoyó en DOM y consola.
 
 ### `dev/v3.0` · Fase 3 — motor multicapa local
 
@@ -71,7 +71,7 @@ La SPA se verificó en navegador contra el servicio instalado, inyectando el tok
 - `deploy/Generate-Sbom.ps1` consulta `dotnet list package --include-transitive --format json` y genera un SPDX 2.3 con 50 paquetes (producto, dependencias de ejecución y dependencias de test marcadas como `DEV_DEPENDENCY_OF`). Las licencias se toman de los `.nuspec` reales de la caché NuGet; WebView2 se identifica como `BSD-3-Clause` y su texto se copia a `licenses/`.
 - `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. `EULA-EVALUATION.md` concede una licencia limitada para probar el paquete firmado sin uso comercial; prohíbe distribuirlo, comercializarlo y modificar el código sin permiso escrito.
 - `finish.cmd` acepta opcionalmente `[INTELPACKAGEDIR]` e `[INTELKEYHASH]` (o las variables de entorno del mismo nombre) y `Register-Service.ps1` valida ambas antes de escribirlas en el entorno del SCM. Así el paquete firmado de la Fase 4 puede usarse también en una instalación gestionada.
-- Verificado con build Release sin advertencias, 147 tests y un ciclo aislado `install.cmd` → `finish.cmd`: servicio `Running`/`Auto`, `managedByScm=true`, `VERSION=3.0.0`, SBOM/avisos/licencias presentes, `intelStatus=verified:phase5-install`, 1 hash, 5 reglas y `droppedEvents=0`. La desinstalación limpió el servicio de prueba.
+- Verificado con build Release sin advertencias, 149 tests y un ciclo aislado `install.cmd` → `finish.cmd`: servicio `Running`/`Auto`, `managedByScm=true`, `VERSION=3.0.0`, SBOM/avisos/licencias presentes, `intelStatus=verified:phase5-install`, 1 hash, 5 reglas y `droppedEvents=0`. La desinstalación limpió el servicio de prueba.
 
 ### `dev/v3.0` · Fase 6 — benchmarks reproducibles en Release
 
@@ -96,7 +96,16 @@ La SPA se verificó en navegador contra el servicio instalado, inyectando el tok
 - `PrivilegedOperationPolicy` exige elevación completa para las cinco operaciones sensibles. `PrivilegedIpcDispatcher` rechaza reglas `Allow` y reutiliza los gestores reales de política, cuarentena y firewall. Todos los intentos se registran en `privileged-audit.jsonl`.
 - `LocalFileAcl.RestrictTree` quita al usuario interactivo el acceso directo heredado a configuración, claves, historial y cuarentena; `finish.cmd` concede el directorio de estado solo a SYSTEM y administradores.
 - Correcciones durante la implementación: RIDs de integridad y valores de `TOKEN_ELEVATION_TYPE` alineados con `winnt.h`, orden correcto de `CheckTokenMembership`, duplicación del token primario con `TOKEN_DUPLICATE`, tolerancia a BOM en la trama IPC y comprobación de salud del instalador sin token.
-- Verificado con build Release sin advertencias, 147 tests y dos pruebas de humo aisladas: la API HTTP devuelve `405` para las cinco mutaciones retiradas y `200` para `/api/scan` sin crear `ui-token`; un cliente elevado real fue autorizado por la Named Pipe y su intento quedó en `privileged-audit.jsonl`, mientras una operación desconocida fue rechazada antes del despacho.
+- Verificado con build Release sin advertencias, 149 tests y dos pruebas de humo aisladas: la API HTTP devuelve `405` para las cinco mutaciones retiradas y `200` para `/api/scan` sin crear `ui-token`; un cliente elevado real fue autorizado por la Named Pipe y su intento quedó en `privileged-audit.jsonl`, mientras una operación desconocida fue rechazada antes del despacho.
+
+### `dev/v3.0` · P1 — CI reproducible sin cambiar la licencia
+
+- `.github/workflows/ci.yml` ejecuta en `windows-latest`: restore, build Release, 149 tests con results TRX y la verificación local de despliegue. No publica release, no firma y no necesita secretos.
+- `deploy/Check-Ci.ps1` comprueba la sintaxis de los 13 scripts de despliegue, regenera el SBOM/avisos y los compara con los committed, construye una etapa real con `Setup-Aegis.ps1 -StageOnly` y valida VERSION dependencias de `deploy`, ausencia de `ui-token` y copia byte a byte de los scripts incluidos. Además arranca el servicio publicado y comprueba que `POST /api/scan` devuelve una decisión real sin crear `events.jsonl`, `threats.jsonl`, `reputation.json`, ni cambiar contadores, cuarentena o reglas.
+- Corrección arquitectónica: `POST /api/scan` usa `ScanPathReadOnlyAsync`, que reutiliza el enriquecimiento y la decisión sin persistir ni remediar. La monitorización automática mantiene el flujo completo con remediación.
+- El nombre de la Named Pipe se deriva siempre de `AEGIS_UI_USER_SID` mediante una función compartida en `Aegis.Core`; si UAC solicita otra cuenta administradora, el proceso elevado usa el SID autorizado por la instalación y no el suyo.
+- `PrivilegedOperation` tiene una única definición en `Aegis.Core`, compartida por servicio, puente WebView2 y pruebas; un test compara los nombres de la SPA con el enum.
+- [Auditoría de licencias](docs/P1-LICENCIAS.md): un único autor en el historial, sin `Co-authored-by`, sin activos de imagen/fuente y dependencias MIT/BSD-3-Clause/Apache-2.0. La migración a Apache-2.0 sigue bloqueada hasta obtener confirmación escrita del titular y revisar origen de reglas y fragmentos; **no se ha tocado `LICENSE` ni `EULA-EVALUATION.md`**.
 
 **Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición de control de 20 s en reposo tras la Fase 3 (24 núcleos lógicos, monitorización y WFP activos, compilación Debug) el servicio registró 81,8 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 84,6 MB y 2 % y `droppedEvents=0`. El método, la referencia anterior, la medición Release con carga y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet. Opcionalmente se puede aplicar un paquete local firmado con `deploy/Build-IntelPackage.ps1`, verificado antes de cargarse; no hay descarga remota ni actualización silenciosa.
 
@@ -196,6 +205,6 @@ Puedes descargar y probar el paquete firmado siempre que lo uses solo para evalu
 
 ## Configuración local
 
-`%AEGIS_DATA_DIR%\config.json` contiene la política de detección (umbrales, `autoQuarantine`, `autoBlockNetwork`, `learningMode` y `maxEvents`). Se puede editar desde la UI (**Configuración**) o con `PUT /api/settings`. No contiene secretos. `learningMode` observa y registra las decisiones sin aplicar cuarentena ni bloqueo automático, salvo indicios verificados en el equipo (hash en lista local o regla EICAR).
+`%AEGIS_DATA_DIR%\config.json` contiene la política de detección (umbrales, `autoQuarantine`, `autoBlockNetwork`, `learningMode` y `maxEvents`). Se puede editar desde la UI (**Configuración**), que envía la operación `PolicyChange` por IPC privilegiado; `PUT /api/settings` ya no existe. No contiene secretos. `learningMode` observa y registra las decisiones sin aplicar cuarentena ni bloqueo automático, salvo indicios verificados en el equipo (hash en lista local o regla EICAR).
 
 Las detecciones se basan en los archivos de `%AEGIS_RULES_DIR%` (por defecto `C:\Program Files\AegisGuard\rules`): reglas `*.yar` (YARA-lite), `threat-intel.json` (hashes, dominios y direcciones IP) y `eicar.yar`. El listado distribuido solo contiene el hash EICAR: las listas de dominios y direcciones IP están vacías porque no se inventan indicadores; la API y los tests comprueban que no coinciden con nada. En tiempo de ejecución no se descarga nada. Cualquier actualización futura de firmas deberá ser firmada, verificable y opcional: la protección local no dependerá de ella.

@@ -27,8 +27,11 @@ public sealed class AegisBridge
     public async Task<string> Invoke(string operation, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(operation)) return Failure("operación no indicada");
-        if (!Enum.TryParse<UiOperation>(operation, ignoreCase: false, out var parsed))
+        if (!Enum.TryParse<PrivilegedOperation>(operation, ignoreCase: false, out var parsed))
             return Failure("operación desconocida");
+        // La ruta se deriva del SID autorizado por la instalación, no del
+        // usuario del proceso elevado: UAC puede pedir otra cuenta.
+        var pipeSid = AegisIpcNames.AuthorizedUserSid();
         string request;
         JsonDocument document;
         try { document = JsonDocument.Parse(payloadJson); }
@@ -44,8 +47,8 @@ public sealed class AegisBridge
 
         try
         {
-            if (IsElevated()) return await CallPipeAsync(request).ConfigureAwait(false);
-            return await CallElevatedAsync(request).ConfigureAwait(false);
+            if (IsElevated()) return await CallPipeAsync(request, pipeSid).ConfigureAwait(false);
+            return await CallElevatedAsync(request, pipeSid).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -63,11 +66,12 @@ public sealed class AegisBridge
         if (args.Length < 3 || !string.Equals(args[0], ElevatedSwitch, StringComparison.Ordinal))
             return false;
         var callerSid = args.Length > 3 ? args[3] : null;
+        var pipeSid = args.Length > 4 ? args[4] : callerSid;
         try
         {
             var request = Encoding.UTF8.GetString(Convert.FromBase64String(args[1]));
             var responsePath = args[2];
-            var response = new AegisBridge().CallPipeAsync(request).GetAwaiter().GetResult();
+            var response = new AegisBridge().CallPipeAsync(request, pipeSid).GetAwaiter().GetResult();
             WriteRestricted(responsePath, response, callerSid);
         }
         catch (Exception ex)
@@ -78,9 +82,10 @@ public sealed class AegisBridge
         return true;
     }
 
-    private async Task<string> CallPipeAsync(string request)
+    private async Task<string> CallPipeAsync(string request, string? pipeSid)
     {
-        var name = PipeNameForCurrentUser();
+        var sid = string.IsNullOrWhiteSpace(pipeSid) ? AegisIpcNames.AuthorizedUserSid() : pipeSid;
+        var name = AegisIpcNames.PrivilegedPipe(sid);
         using var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
@@ -102,7 +107,7 @@ public sealed class AegisBridge
         return result;
     }
 
-    private static async Task<string> CallElevatedAsync(string request)
+    private static async Task<string> CallElevatedAsync(string request, string pipeSid)
     {
         var responsePath = Path.Combine(Path.GetTempPath(),
             "aegis-" + Path.GetRandomFileName() + ".response");
@@ -113,7 +118,7 @@ public sealed class AegisBridge
         var start = new ProcessStartInfo
         {
             FileName = Environment.ProcessPath ?? "Aegis.UI.exe",
-            Arguments = $"{ElevatedSwitch} {encoded} \"{responsePath}\" \"{callerSid}\"",
+            Arguments = $"{ElevatedSwitch} {encoded} \"{responsePath}\" \"{callerSid}\" \"{pipeSid}\"",
             UseShellExecute = true,
             Verb = "runas",
             CreateNoWindow = true,
@@ -169,22 +174,6 @@ public sealed class AegisBridge
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
-    private static string PipeNameForCurrentUser()
-    {
-        var sid = WindowsIdentity.GetCurrent().User?.Value
-            ?? throw new InvalidOperationException("no se pudo obtener el SID del usuario");
-        return AegisIpcNames.PrivilegedPipe(sid);
-    }
-
     private static string Failure(string error) =>
         JsonSerializer.Serialize(new { ok = false, error }, JsonOptions);
-
-    private enum UiOperation
-    {
-        FirewallAddRule,
-        FirewallRemoveRule,
-        QuarantineRestore,
-        QuarantinePurge,
-        PolicyChange
-    }
 }

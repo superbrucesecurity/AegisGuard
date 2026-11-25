@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aegis.Core;
 using Aegis.Service;
 
 namespace Aegis.Checks;
@@ -115,5 +116,26 @@ public class PrivilegedIpcPolicyTests
         Assert.NotEqual(first, other);
         Assert.StartsWith("aegisguard-", first);
         Assert.EndsWith("-privileged", first);
+    }
+
+    [Fact]
+    public void ElSidAutorizadoFijaElNombreInclusoSiLaElevacionUsaOtraCuenta()
+    {
+        const string installedSid = "S-1-5-21-100-200-300-1001";
+        var previous = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
+        try
+        {
+            Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", installedSid);
+            Assert.Equal(
+                PrivilegedIpcEndpoints.PipeNameForSid(installedSid),
+                AegisIpcNames.PrivilegedPipeForAuthorizedUser());
+            Assert.Equal(
+                AegisIpcNames.PrivilegedPipe(installedSid),
+                PrivilegedIpcEndpoints.PipeNameForCurrentUser());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AEGIS_UI_USER_SID", previous);
+        }
     }
 }

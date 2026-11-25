@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 
 namespace Aegis.Core;
@@ -16,4 +17,24 @@ public static class AegisIpcNames
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid)))[..16].ToLowerInvariant();
         return $"aegisguard-{hash}-privileged";
     }
+
+    /// <summary>
+    /// SID autorizado por la instalación. El instalador lo escribe en
+    /// AEGIS_UI_USER_SID; si no está definido (arranque manual) se usa el
+    /// usuario actual. Servicio y UI deben llamar a esta misma función: UAC
+    /// puede elevar con una cuenta distinta y eso no debe cambiar el pipe.
+    /// </summary>
+    public static string AuthorizedUserSid()
+    {
+        var configured = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
+        if (!string.IsNullOrWhiteSpace(configured)) return configured;
+        if (OperatingSystem.IsWindows())
+        {
+            var current = WindowsIdentity.GetCurrent().User?.Value;
+            if (!string.IsNullOrWhiteSpace(current)) return current;
+        }
+        return "aegis-console";
+    }
+
+    public static string PrivilegedPipeForAuthorizedUser() => PrivilegedPipe(AuthorizedUserSid());
 }

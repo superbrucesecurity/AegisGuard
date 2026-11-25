@@ -21,7 +21,7 @@ Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
     └── LocalFileAcl (ACL restringida de estado, claves y cuarentena)
 ```
 
-No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto TCP expuesto es el enlace local de loopback `127.0.0.1:8787`; la superficie administrativa es una Named Pipe con nombre derivado del SID del usuario y ACL explícita. La UI no lee directamente archivos de estado: para eso usa la API local.
+No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto TCP expuesto es el enlace local de loopback `127.0.0.1:8787`; la superficie administrativa es una Named Pipe con nombre derivado del SID autorizado por la instalación y ACL explícita. La UI no lee directamente archivos de estado: para eso usa la API local. La única excepción es el archivo de respuesta creado en `%TEMP%` por el proceso elevado, con ACL que permite leer solo al solicitante original y al propio proceso elevado.
 
 En las instalaciones gestionadas, `Aegis.Service.exe` se ejecuta como servicio SCM `AegisGuardSvc` (`start= auto`, recuperación escalonada, proveedor de eventos con el mismo nombre). `UseWindowsService` conecta el ciclo de vida con stop/shutdown; `AegisProfilePaths` traduce el SID del usuario interactivo registrado por el instalador a sus carpetas Desktop/Documentos/Downloads, necesarias porque el perfil de `LocalSystem` no las contiene. Sin ese mapeo los watchers quedan degradados.
 
@@ -33,7 +33,7 @@ En las instalaciones gestionadas, `Aegis.Service.exe` se ejecuta como servicio S
 4. **Remediación**: la regla WFP por aplicación se resuelve antes de mover el archivo; cuarentena reversible solo para rutas seguras; bloqueo WFP solo con veredicto `Block`/`Quarantine`; modo aprendizaje registra conexiones sin bloquear. `Block` y `Quarantine` se contabilizan por separado.
 5. **Persistencia**: observaciones y decisiones en `events.jsonl` / `threats.jsonl`, reputación en `reputation.json` (con suma SHA-256 y escritura atómica), todo bajo `%AEGIS_DATA_DIR%` (por defecto `C:\ProgramData\AegisGuard`). Las reglas se leen de `%AEGIS_RULES_DIR%` (por defecto el directorio `rules` del servicio) o, si se configuran `AEGIS_INTEL_PACKAGE_DIR` y `AEGIS_INTEL_KEY_SHA256`, de un paquete local verificado.
 
-El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el resultado. La prueba EICAR (`POST /api/selftest/eicar`) reutiliza el enriquecimiento y la decisión, pero no escribe eventos ni aplica remediación: crea una muestra en `%AEGIS_DATA_DIR%\selftest`, la analiza y la elimina. Si otro producto retira el archivo, se informa del bloqueo externo en lugar de fingir un resultado.
+El análisis manual (`POST /api/scan`) reutiliza el enriquecimiento y la decisión, pero no persiste el resultado, no actualiza contadores ni reputación y no aplica remediación: una petición HTTP no puede poner en cuarentena ni crear reglas. La monitorización automática sí ejecuta el flujo completo (pasos 3 a 5). La prueba EICAR (`POST /api/selftest/eicar`) sigue la misma variante de solo evaluación: crea una muestra en `%AEGIS_DATA_DIR%\selftest`, la analiza y la elimina. Si otro producto retira el archivo, se informa del bloqueo externo en lugar de fingir un resultado.
 
 ## Reglas de decisión
 

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Aegis.Core;
 using Aegis.Service;
 
@@ -33,6 +34,8 @@ public class PrivilegedSecuritySurfaceTests
         Assert.DoesNotContain("MapPost(\"/api/firewall/rules", program);
         Assert.DoesNotContain("MapDelete(\"/api/firewall/rules/", program);
         Assert.DoesNotContain("MapPut(\"/api/settings", program);
+        Assert.Contains("ScanPathReadOnlyAsync", program);
+        Assert.DoesNotContain("pipeline.ScanPathAsync", program);
     }
 
     [Fact]
@@ -61,6 +64,20 @@ public class PrivilegedSecuritySurfaceTests
     {
         const string sid = "S-1-5-21-100-200-300-1001";
         Assert.Equal(AegisIpcNames.PrivilegedPipe(sid), PrivilegedIpcEndpoints.PipeNameForSid(sid));
+    }
+
+    [Fact]
+    public void LaSpaYElPuenteUsanElMismoContratoDeOperaciones()
+    {
+        var script = Read("src", "Aegis.Service", "wwwroot", "app.js");
+        var bridge = Read("src", "Aegis.UI", "AegisBridge.cs");
+        var declared = Regex.Matches(script, @"op:\s*'([A-Za-z]+)'")
+            .Select(m => m.Groups[1].Value)
+            .OrderBy(n => n)
+            .ToArray();
+        Assert.Equal(Enum.GetNames<PrivilegedOperation>().OrderBy(n => n).ToArray(), declared);
+        Assert.Contains("Enum.TryParse<PrivilegedOperation>", bridge);
+        Assert.DoesNotContain("UiOperation", bridge);
     }
 
     [Fact]

@@ -14,27 +14,7 @@ public static class PrivilegedIpcEndpoints
 {
     public static string PipeNameForSid(string sid) => AegisIpcNames.PrivilegedPipe(sid);
 
-    public static string PipeNameForCurrentUser()
-    {
-        var sid = Environment.GetEnvironmentVariable("AEGIS_UI_USER_SID");
-        if (string.IsNullOrWhiteSpace(sid) && OperatingSystem.IsWindows())
-            sid = WindowsIdentity.GetCurrent().User?.Value;
-        return AegisIpcNames.PrivilegedPipe(string.IsNullOrWhiteSpace(sid) ? "aegis-console" : sid);
-    }
-}
-
-/// <summary>
-/// Operaciones que sólo pueden ejecutarse a través de IPC privilegiado.
-/// Ninguna de ellas está disponible en la API HTTP de la interfaz.
-/// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<PrivilegedOperation>))]
-public enum PrivilegedOperation
-{
-    FirewallAddRule,
-    FirewallRemoveRule,
-    QuarantineRestore,
-    QuarantinePurge,
-    PolicyChange
+    public static string PipeNameForCurrentUser() => AegisIpcNames.PrivilegedPipeForAuthorizedUser();
 }
 
 /// <summary>

@@ -16,6 +16,18 @@ El acceso directo a `%AEGIS_DATA_DIR%` está restringido a SYSTEM, administrador
 
 Los cambios de política se hacen desde la interfaz: WebView2 llama al objeto `aegis`, se solicita consentimiento UAC si hace falta y la operación `PolicyChange` llega al servicio por Named Pipe. El servicio valida la política, la persiste y aplica `maxEvents` en caliente sin reiniciar. `PUT /api/settings` ya no existe. Todos los intentos, autorizados o rechazados, quedan en `%AEGIS_DATA_DIR%\privileged-audit.jsonl`; revise ese archivo si una operación administrativa falla. Para diagnosticar la elevación, compruebe que la cuenta usada sea administrador real (no un token limitado) y que la sesión sea interactiva.
 
+## Verificación continua
+
+El repositorio ejecuta en GitHub Actions (`windows-latest`, .NET 10): restore, build Release, tests y `deploy/Check-Ci.ps1`. El mismo script se puede ejecutar localmente:
+
+```powershell
+dotnet build AegisGuard.slnx -c Release --nologo
+dotnet test tests/Aegis.Checks/Aegis.Checks.csproj -c Release --no-build --nologo
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Check-Ci.ps1
+```
+
+`Check-Ci.ps1` valida la sintaxis de los scripts de despliegue, regenera y compara SBOM/avisos, crea una etapa sin firmar con `Setup-Aegis.ps1 -StageOnly` y comprueba VERSION, scripts copiados, SPA publicada y ausencia de `ui-token`. Después arranca el servicio desde esa etapa con un directorio de estado aislado y verifica que `POST /api/scan` no crea `events.jsonl`, `threats.jsonl` ni `reputation.json` y no cambia contadores, cuarentena ni reglas. No firma, no instala de forma persistente y no publica nada. La auditoría previa a una posible apertura de licencia está en [P1-LICENCIAS.md](P1-LICENCIAS.md).
+
 ## Validación aislada del instalador
 
 El ciclo se puede probar sin tocar las rutas de producción:

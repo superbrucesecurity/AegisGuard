@@ -17,7 +17,6 @@ project.assets.json
 *.runtimeconfig.json
 
 ## Estado local (nunca versionar)
-ui-token
 config.json
 *.pfx
 *.key

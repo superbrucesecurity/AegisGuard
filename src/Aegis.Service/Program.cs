@@ -266,7 +266,7 @@ app.MapPost("/api/scan", async (ScanRequest request, CancellationToken ct) =>
         return Results.BadRequest(new { error = "fichero no encontrado" });
     try
     {
-        var threat = await pipeline.ScanPathAsync(request.Path, ct);
+        var threat = await pipeline.ScanPathReadOnlyAsync(request.Path, ct);
         return Results.Json(threat, JsonDefaults.Options);
     }
     catch (Exception ex)

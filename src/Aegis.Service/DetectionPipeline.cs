@@ -156,17 +156,31 @@ public sealed class DetectionPipeline
         }
     }
 
-    public async Task<ThreatRecord> ScanPathAsync(string path, CancellationToken ct = default)
+    public async Task<ThreatRecord> ScanPathAsync(string path, CancellationToken ct = default) =>
+        await ProcessAsync(ManualObservation(path), ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Analiza un fichero con el motor real pero no persiste el resultado, no
+    /// actualiza contadores ni reputación y no aplica remediación. Es la única
+    /// variante permitida desde HTTP: una petición de lectura del navegador no
+    /// debe poder poner en cuarentena ni crear reglas de firewall.
+    /// </summary>
+    public async Task<ThreatRecord> ScanPathReadOnlyAsync(string path, CancellationToken ct = default)
+    {
+        var decision = await EvaluateAsync(ManualObservation(path), ct).ConfigureAwait(false);
+        return new ThreatRecord { Decision = decision };
+    }
+
+    private static Observation ManualObservation(string path)
     {
         if (!File.Exists(path)) throw new FileNotFoundException("No se encontró el fichero", path);
-        var observation = new Observation
+        return new Observation
         {
             Kind = EventKind.ManualScan,
             Subject = Path.GetFullPath(path),
             FileExtension = Path.GetExtension(path),
             Source = "manual"
         };
-        return await ProcessAsync(observation, ct).ConfigureAwait(false);
     }
 
     private async Task EnrichAsync(Observation o, List<RuleMatch> matches, CancellationToken ct)

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev/v3.0]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore AegisGuard.slnx --nologo
+        shell: pwsh
+
+      - name: Build Release
+        run: dotnet build AegisGuard.slnx -c Release --no-restore --nologo
+        shell: pwsh
+
+      - name: Test
+        run: dotnet test tests/Aegis.Checks/Aegis.Checks.csproj -c Release --no-build --nologo --logger "trx;LogFileName=results.trx"
+        shell: pwsh
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/TestResults/*.trx"
+          if-no-files-found: warn
+
+      - name: SBOM, deploy scripts and unsigned stage
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Check-Ci.ps1
+        shell: pwsh

@@ -198,6 +198,20 @@ try {
         $afterQuarantine = @(Get-Api '/api/quarantine')
         $afterRules = (Get-Api '/api/firewall/stats').active
 
+        if ($afterStatus.eventsTotal -ne $beforeStatus.eventsTotal) {
+            $beforeIds = @($beforeEvents | ForEach-Object { $_.id })
+            $newEvents = @($afterEvents | Where-Object { $beforeIds -notcontains $_.id })
+            Write-Host "DIAG eventsTotal $($beforeStatus.eventsTotal) -> $($afterStatus.eventsTotal); nuevos $($newEvents.Count)."
+            Write-Host "DIAG before=$($beforeStatus | ConvertTo-Json -Compress -Depth 4)"
+            Write-Host "DIAG after=$($afterStatus | ConvertTo-Json -Compress -Depth 4)"
+            $newEvents | Select-Object -Last 10 id, kind, subject, source, processId, timestamp |
+                Format-Table -AutoSize | Out-String | Write-Host
+            $idleBefore = (Get-Api '/api/status').eventsTotal
+            Start-Sleep -Milliseconds 800
+            $idleAfter = (Get-Api '/api/status').eventsTotal
+            Write-Host "DIAG sin peticiones: $idleBefore -> $idleAfter"
+        }
+
         Assert-True ($afterStatus.eventsTotal -eq $beforeStatus.eventsTotal) 'POST /api/scan incrementó eventsTotal.'
         Assert-True ($afterStatus.threatsTotal -eq $beforeStatus.threatsTotal) 'POST /api/scan incrementó threatsTotal.'
         Assert-True ($afterStatus.blockedTotal -eq $beforeStatus.blockedTotal) 'POST /api/scan incrementó blockedTotal.'

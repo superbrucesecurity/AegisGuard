@@ -12,28 +12,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
 
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'Registre el servicio desde un shell con privilegios de administrador.'
-}
-
-function Assert-SafeDirectory([string]$Path, [string]$Label) {
-    $full = [IO.Path]::GetFullPath($Path)
-    $root = [IO.Path]::GetPathRoot($full)
-    $forbidden = @(
-        $root,
-        $env:SystemRoot,
-        $env:ProgramFiles,
-        ${env:ProgramFiles(x86)},
-        $env:ProgramData,
-        $env:USERPROFILE
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
-    if ($forbidden -contains $full.TrimEnd('\')) {
-        throw "$Label no puede ser una raiz del sistema: $full"
-    }
-    return $full
 }
 
 function Invoke-ScStrict([string[]]$ScArgs) {
@@ -59,8 +42,8 @@ if ($hasPackageDir -and -not (Test-Path -LiteralPath $IntelPackageDir -PathType 
     throw "No se encontro el paquete de inteligencia: $IntelPackageDir"
 }
 
-$InstallDir = Assert-SafeDirectory $InstallDir 'InstallDir'
-$DataDir = Assert-SafeDirectory $DataDir 'DataDir'
+$InstallDir = Assert-AegisSafeDirectory $InstallDir 'InstallDir'
+$DataDir = Assert-AegisSafeDirectory $DataDir 'DataDir'
 $rulesDir = Join-Path $InstallDir 'rules'
 $serviceExe = Join-Path $InstallDir 'Aegis.Service\Aegis.Service.exe'
 if (-not (Test-Path -LiteralPath $serviceExe -PathType Leaf)) {

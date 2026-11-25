@@ -10,6 +10,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
+
 $root = Split-Path -Parent $PSScriptRoot
 $TargetDir = [IO.Path]::GetFullPath($TargetDir).TrimEnd([IO.Path]::DirectorySeparatorChar)
 if (-not (Test-Path -LiteralPath $TargetDir -PathType Container)) { throw "No se encontró TargetDir: $TargetDir" }
@@ -17,26 +19,7 @@ if ([string]::IsNullOrWhiteSpace($ManifestPath)) { $ManifestPath = Join-Path $Ta
 $ManifestPath = [IO.Path]::GetFullPath($ManifestPath)
 $stampPath = Join-Path $TargetDir 'RELEASE-SIGNATURES.ps1'
 
-function Get-Certificate {
-    if (-not [string]::IsNullOrWhiteSpace($PfxPath)) {
-        if (-not (Test-Path -LiteralPath $PfxPath -PathType Leaf)) { throw "No se encontró el PFX: $PfxPath" }
-        if ($null -eq $PfxPassword) { $PfxPassword = Read-Host 'Contraseña del PFX' -AsSecureString }
-        return Import-PfxCertificate -FilePath $PfxPath -Password $PfxPassword -CertStoreLocation 'Cert:\CurrentUser\My'
-    }
-    if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
-        throw 'Indique -CertificateThumbprint o -PfxPath.'
-    }
-    $wanted = ($CertificateThumbprint -replace '[^A-Fa-f0-9]', '').ToUpperInvariant()
-    if ($wanted.Length -ne 40) { throw 'CertificateThumbprint debe ser una huella SHA-1 de 40 hexadecimales.' }
-    foreach ($store in @('Cert:\CurrentUser\My', 'Cert:\LocalMachine\My')) {
-        foreach ($candidate in Get-ChildItem -LiteralPath $store -ErrorAction SilentlyContinue) {
-            if ($candidate.Thumbprint -ieq $wanted) { return $candidate }
-        }
-    }
-    throw "No se encontró el certificado $wanted en los almacenes personales."
-}
-
-$cert = Get-Certificate
+$cert = Get-AegisSigningCertificate -CertificateThumbprint $CertificateThumbprint -PfxPath $PfxPath -PfxPassword $PfxPassword
 if (-not $cert.HasPrivateKey) { throw 'El certificado indicado no tiene clave privada; no puede firmar.' }
 $codeSigningOid = '1.3.6.1.5.5.7.3.3'
 $eku = @($cert.EnhancedKeyUsageList | ForEach-Object {
@@ -44,9 +27,7 @@ $eku = @($cert.EnhancedKeyUsageList | ForEach-Object {
 })
 if ($eku -notcontains $codeSigningOid) { throw 'El certificado no tiene el uso extendido de firma de código.' }
 $pin = $cert.Thumbprint.ToUpperInvariant()
-$certHasher = [Security.Cryptography.SHA256]::Create()
-try { $certSha256 = [BitConverter]::ToString($certHasher.ComputeHash($cert.RawData)).Replace('-', '').ToLowerInvariant() }
-finally { $certHasher.Dispose() }
+$certSha256 = Get-AegisCertificateSha256 $cert
 
 $signable = @('.exe', '.dll', '.ps1')
 $acceptedStatuses = @('Valid')
@@ -73,11 +54,7 @@ foreach ($file in $files) {
             $ours++
         }
         elseif ($acceptedStatuses -contains $signature.Status -and $null -ne $signature.SignerCertificate) {
-            $existingHasher = [Security.Cryptography.SHA256]::Create()
-            try {
-                $existingSha = [BitConverter]::ToString($existingHasher.ComputeHash($signature.SignerCertificate.RawData)).Replace('-', '').ToLowerInvariant()
-            }
-            finally { $existingHasher.Dispose() }
+            $existingSha = Get-AegisCertificateSha256 $signature.SignerCertificate
             if ($existingSha -eq $certSha) { $ours++ } else { $thirdParty++ }
         }
         else {
@@ -89,11 +66,7 @@ foreach ($file in $files) {
     finally { $sha.Dispose() }
     $entry = [ordered]@{ path = $relative; sha256 = $hash }
     if ($acceptedStatuses -contains $signature.Status -and $null -ne $signature.SignerCertificate) {
-        $signerHasher = [Security.Cryptography.SHA256]::Create()
-        try {
-            $signerSha = [BitConverter]::ToString($signerHasher.ComputeHash($signature.SignerCertificate.RawData)).Replace('-', '').ToLowerInvariant()
-        }
-        finally { $signerHasher.Dispose() }
+        $signerSha = Get-AegisCertificateSha256 $signature.SignerCertificate
         $entry.signerThumbprint = $signature.SignerCertificate.Thumbprint.ToUpperInvariant()
         $entry.signerCertificateSha256 = $signerSha
         $entry.signatureStatus = [string]$signature.Status

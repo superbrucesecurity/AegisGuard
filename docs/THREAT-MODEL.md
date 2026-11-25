@@ -9,7 +9,7 @@ se apoya en código, tests o en una verificación reproducible.
 
 - Producto: agente local de Windows 10/11 x64, servicio `AegisGuardSvc`
   (`LocalSystem`) e interfaz WebView2 sin privilegios.
-- Versión auditada y publicada: `3.1.0` (tag `v3.1.0`), basada en `3.0.1`
+- Versión auditada y publicada: `3.1.1` (tag `v3.1.1`), basada en `3.0.1`
   (`785a160`) con las correcciones de `dev/v3.1` descritas aquí.
 - No hay nube, IA, telemetría saliente, claves de API ni decisiones externas.
 - No se instala ni se afirma un controlador MiniFilter/WFP callout: no hay WDK,
@@ -126,7 +126,8 @@ documentada en `docs/SEGURIDAD.md`.
 - CI: `.github/workflows/ci.yml` ejecuta restauración, build Debug/Release,
   tests y `Check-Ci.ps1` en `main`, `dev/v3.0` y `dev/v3.1`.
 
-Release `v3.1.0`: ZIP `AegisGuard-3.1.0-win-x64.zip` con SHA-256
-`20796c3ff5619186ef5769b55acd7cb9c2c4b88ec9baff928ecff504d22e832c`, verificado
-por `Verify-Release.ps1` y `Verify-Archive.ps1` con el pin `a3481e2b…59fe4a0`.
+Release `v3.1.1`: ZIP `AegisGuard-3.1.1-win-x64.zip` con SHA-256
+`5974e86da6a7289f7c474f606134edf1cf7cf0ce086801b6b99c3a7e97a43824`,
+verificado por `Verify-Release.ps1` y `Verify-Archive.ps1` con el pin
+`a3481e2b…59fe4a0`. `v3.1.0` quedó como etiqueta preliminar, sin assets, y
 `v3.0.1` permanece histórica en `785a160` con sus assets originales.

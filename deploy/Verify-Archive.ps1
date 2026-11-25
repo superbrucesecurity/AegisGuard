@@ -10,6 +10,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
+
 $separator = [IO.Path]::DirectorySeparatorChar
 $OutputDir = [IO.Path]::GetFullPath($OutputDir).TrimEnd($separator)
 if (-not (Test-Path -LiteralPath $OutputDir -PathType Container)) { throw "No se encontró OutputDir: $OutputDir" }
@@ -20,22 +22,6 @@ if ([string]::IsNullOrWhiteSpace($StampPath)) {
 }
 $StampPath = [IO.Path]::GetFullPath($StampPath)
 if (-not (Test-Path -LiteralPath $StampPath -PathType Leaf)) { throw "No se encontró el sello: $StampPath" }
-
-function Get-FileSha256([string]$Path) {
-    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-    try {
-        $sha = [Security.Cryptography.SHA256]::Create()
-        try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
-        finally { $sha.Dispose() }
-    }
-    finally { $stream.Dispose() }
-}
-
-function Get-CertificateSha256($Certificate) {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try { return [BitConverter]::ToString($sha.ComputeHash($Certificate.RawData)).Replace('-', '').ToLowerInvariant() }
-    finally { $sha.Dispose() }
-}
 
 $acceptedStatuses = @('Valid')
 if ($AllowUntrustedTestSigner) {
@@ -48,7 +34,7 @@ if ($acceptedStatuses -notcontains $signature.Status) {
     throw "Sello del ZIP no válido: $($signature.Status) ($($signature.StatusMessage))"
 }
 if ($null -eq $signature.SignerCertificate) { throw 'El sello del ZIP no tiene certificado firmante.' }
-$signerSha = Get-CertificateSha256 $signature.SignerCertificate
+$signerSha = Get-AegisCertificateSha256 $signature.SignerCertificate
 
 $expected = $ExpectedSignerSha256
 if ([string]::IsNullOrWhiteSpace($expected)) { $expected = $env:AEGIS_RELEASE_SIGNER_SHA256 }
@@ -87,7 +73,7 @@ if ($declaredSigner.Count -eq 1 -and $declaredSigner[0] -ne $signerSha) {
 
 $zipPath = Join-Path $OutputDir $zipName
 if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) { throw "No se encontró el ZIP: $zipPath" }
-$actualSha = Get-FileSha256 $zipPath
+$actualSha = Get-AegisFileSha256 $zipPath
 if ($actualSha -ne $zipSha.ToLowerInvariant()) {
     throw "El ZIP fue modificado: esperado $zipSha, real $actualSha"
 }

@@ -14,32 +14,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
 
-function Assert-SafeDirectory([string]$Path, [string]$Label) {
-    $full = [IO.Path]::GetFullPath($Path)
-    $root = [IO.Path]::GetPathRoot($full)
-    $forbidden = @(
-        $root,
-        $env:SystemRoot,
-        $env:ProgramFiles,
-        ${env:ProgramFiles(x86)},
-        $env:ProgramData,
-        $env:USERPROFILE
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
-    if ($forbidden -contains $full.TrimEnd('\')) {
-        throw "$Label no puede ser una raíz del sistema: $full"
-    }
-    return $full
-}
 
-$InstallDir = Assert-SafeDirectory $InstallDir 'InstallDir'
-$DataDir = Assert-SafeDirectory $DataDir 'DataDir'
+$InstallDir = Assert-AegisSafeDirectory $InstallDir 'InstallDir'
+$DataDir = Assert-AegisSafeDirectory $DataDir 'DataDir'
 if ($StageOnly -and $PackageDir) { throw 'StageOnly y PackageDir son mutuamente excluyentes.' }
 if ($StageDir -and $PackageDir) { throw 'StageDir y PackageDir son mutuamente excluyentes.' }
-if ($StageDir) { $StageDir = Assert-SafeDirectory $StageDir 'StageDir' }
-if ($PackageDir) { $PackageDir = Assert-SafeDirectory $PackageDir 'PackageDir' }
-if ($BackupDir) { $BackupDir = Assert-SafeDirectory $BackupDir 'BackupDir' }
+if ($StageDir) { $StageDir = Assert-AegisSafeDirectory $StageDir 'StageDir' }
+if ($PackageDir) { $PackageDir = Assert-AegisSafeDirectory $PackageDir 'PackageDir' }
+if ($BackupDir) { $BackupDir = Assert-AegisSafeDirectory $BackupDir 'BackupDir' }
 if ([string]::IsNullOrWhiteSpace($ExpectedSignerSha256)) { $ExpectedSignerSha256 = $env:AEGIS_RELEASE_SIGNER_SHA256 }
 if (-not [string]::IsNullOrWhiteSpace($ExpectedSignerSha256) -and $ExpectedSignerSha256 -notmatch '^[0-9a-fA-F]{64}$') {
     throw 'ExpectedSignerSha256 debe ser un SHA-256 de 64 caracteres hexadecimales.'
@@ -144,7 +128,7 @@ try {
         $deployDest = Join-Path $stage 'deploy'
         New-Item -ItemType Directory -Force -Path $deployDest | Out-Null
         foreach ($script in @(
-            'Setup-Aegis.ps1', 'install.cmd', 'finish.cmd', 'uninstall.cmd', 'uninstall.ps1',
+            'Setup-Aegis.ps1', 'Aegis-DeployCommon.ps1', 'install.cmd', 'finish.cmd', 'uninstall.cmd', 'uninstall.ps1',
             'Register-Service.ps1', 'Create-Shortcuts.ps1',
             'Verify-Release.ps1', 'Verify-Archive.ps1',
             'Rollback.ps1', 'rollback.cmd'

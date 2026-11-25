@@ -12,6 +12,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
+
 $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($DataDir)) { $DataDir = Join-Path ([IO.Path]::GetTempPath()) 'aegis-benchmark-data' }
 if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $root 'artifacts\benchmark.json' }
@@ -35,13 +37,7 @@ if ([string]::IsNullOrWhiteSpace($authorizedSid)) {
     $authorizedSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 }
 if ([string]::IsNullOrWhiteSpace($authorizedSid)) { throw 'No se pudo resolver el SID del usuario autorizado para el canal IPC.' }
-$sha = [Security.Cryptography.SHA256]::Create()
-try {
-    $sidHash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($authorizedSid))
-    $pipeHash = -join ($sidHash[0..7] | ForEach-Object { $_.ToString('x2') })
-}
-finally { $sha.Dispose() }
-$pipeName = "aegisguard-$pipeHash-privileged"
+$pipeName = Get-AegisPrivilegedPipeName $authorizedSid
 
 function Test-IsUnderPath {
     param([string]$Path, [string]$Root)
@@ -59,26 +55,6 @@ function Test-HealthEndpoint {
         return ([string]$body).Trim() -eq 'ok'
     }
     catch { return $false }
-}
-
-function Invoke-Ipc {
-    param([string]$Operation, [hashtable]$Payload = @{})
-    $request = @{ operation = $Operation; payload = $Payload } | ConvertTo-Json -Depth 12 -Compress
-    $client = [IO.Pipes.NamedPipeClientStream]::new(
-        '.', $pipeName, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
-    try {
-        $client.Connect(10000)
-        $bytes = [Text.Encoding]::UTF8.GetBytes($request + "`n")
-        $client.Write($bytes, 0, $bytes.Length)
-        $client.Flush()
-        $reader = [IO.StreamReader]::new($client, [Text.Encoding]::UTF8, $false, 4096, $true)
-        $line = $reader.ReadLine()
-        if (-not $line) { throw "El canal $pipeName no devolvió respuesta para $Operation." }
-        $response = $line | ConvertFrom-Json
-        if (-not $response.ok) { throw "IPC $Operation rechazada: $($response.error)" }
-        return $response.result
-    }
-    finally { $client.Dispose() }
 }
 
 # ScanPath rechaza el directorio de estado, así que los sintéticos se crean en
@@ -267,7 +243,7 @@ try {
 
     # El estado se lee por la tubería antes de la fase de carga para conservar
     # la línea base. HTTP solo confirma disponibilidad; no expone datos.
-    try { $status = Invoke-Ipc -Operation 'Status' }
+    try { $status = Invoke-Ipc -PipeName $pipeName -Operation 'Status' }
     catch { $status = $null }
 
     $load = $null
@@ -296,7 +272,7 @@ try {
 
             $before = $null
             $after = $null
-            try { $before = Invoke-Ipc -Operation 'Status' } catch { }
+            try { $before = Invoke-Ipc -PipeName $pipeName -Operation 'Status' } catch { }
             $latencies = @()
             $verdicts = @{}
             $errors = @()
@@ -305,7 +281,7 @@ try {
             foreach ($path in $paths) {
                 $watch = [Diagnostics.Stopwatch]::StartNew()
                 try {
-                    $scan = Invoke-Ipc -Operation 'ScanPath' -Payload @{ path = $path }
+                    $scan = Invoke-Ipc -PipeName $pipeName -Operation 'ScanPath' -Payload @{ path = $path }
                     $watch.Stop()
                     $latency = [Math]::Round($watch.Elapsed.TotalMilliseconds, 2)
                     $latencies += [double]$latency
@@ -322,7 +298,7 @@ try {
                 }
             }
             $overall.Stop()
-            try { $after = Invoke-Ipc -Operation 'Status' } catch { }
+            try { $after = Invoke-Ipc -PipeName $pipeName -Operation 'Status' } catch { }
             $sorted = @($latencies | Sort-Object)
             $delta = if ($null -ne $before -and $null -ne $after) {
                 [ordered]@{

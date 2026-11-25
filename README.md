@@ -4,7 +4,7 @@ Antivirus y cortafuegos local para Windows construido con .NET nativo y WebView2
 
 Repositorio público: `https://github.com/superbrucesecurity/AegisGuard`.
 
-Release vigente: `v3.1.0` (`dev/v3.1`). Las secciones `dev/v3.0` recogen evidencia histórica de las fases 1–6 sobre `3.0.0`/`3.0.1`; la configuración de seguridad vigente se describe en [SEGURIDAD.md](docs/SEGURIDAD.md) y el modelo de amenazas en [THREAT-MODEL.md](docs/THREAT-MODEL.md). Ninguna sección histórica implica que esos resultados se hayan repetido en `3.1`.
+Release vigente: `v3.1.1` (`dev/v3.1`). Las secciones `dev/v3.0` recogen evidencia histórica de las fases 1–6 sobre `3.0.0`/`3.0.1`; la configuración de seguridad vigente se describe en [SEGURIDAD.md](docs/SEGURIDAD.md) y el modelo de amenazas en [THREAT-MODEL.md](docs/THREAT-MODEL.md). Ninguna sección histórica implica que esos resultados se hayan repetido en `3.1`.
 
 ## Cómo funciona
 
@@ -26,11 +26,11 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 | Pruebas automáticas | 171 casos | `tests/Aegis.Checks`. |
 | SBOM, avisos y versionado | Implementado | SPDX 2.3, avisos de terceros, `VERSION` y licencia del proyecto. |
 
-### `v3.1.0` · release actual
+### `v3.1.1` · release actual
 
-- Release: https://github.com/superbrucesecurity/AegisGuard/releases/tag/v3.1.0
-- ZIP: `AegisGuard-3.1.0-win-x64.zip` — SHA-256 `20796c3ff5619186ef5769b55acd7cb9c2c4b88ec9baff928ecff504d22e832c`.
-- Sello: `AegisGuard-3.1.0-win-x64.stamp.ps1`, firmado con `CN=Superbrucesecurity` (SHA-256 del certificado `a3481e2b582a7b9304b1e6f37b2f84809315bc925abb2fcb9d723a33159fe4a0`). Certificado autofirmado, sin marca de tiempo RFC3161.
+- Release: https://github.com/superbrucesecurity/AegisGuard/releases/tag/v3.1.1
+- ZIP: `AegisGuard-3.1.1-win-x64.zip` — SHA-256 `5974e86da6a7289f7c474f606134edf1cf7cf0ce086801b6b99c3a7e97a43824`.
+- Sello: `AegisGuard-3.1.1-win-x64.stamp.ps1`, firmado con `CN=Superbrucesecurity` (SHA-256 del certificado `a3481e2b582a7b9304b1e6f37b2f84809315bc925abb2fcb9d723a33159fe4a0`). Certificado autofirmado, sin marca de tiempo RFC3161. `v3.1.0` quedó como etiqueta preliminar y fue sustituida antes de publicar/assets para corregir el quality gate de duplicación.
 - Instalación: `deploy\install.cmd -PackageDir <directorio-descomprimido> -ExpectedSignerSha256 a3481e2b582a7b9304b1e6f37b2f84809315bc925abb2fcb9d723a33159fe4a0`.
 
 ### `dev/v3.0` · Fase 1 — correcciones críticas verificadas
@@ -40,7 +40,7 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 - **Colas:** prioridad para alertas críticas, coalescencia corregida (el primer evento ya no se descarta), contadores reales de descarte y alerta de pérdida de visibilidad. Los duplicados coalescionados se contabilizan en `coalescedEvents`, no como pérdida; solo los descartes reales degradan el estado mostrado.
 - **Token local:** formato validado, recuperación atómica si está corrupto, conservación del archivo inválido y comparación en tiempo constante. La UI recarga una sola vez si el token cambia.
 - **Pipeline:** `ProcessStarted` se enriquece con hash/firma/reglas de la imagen y comprueba PID + tiempo de creación; la regla WFP por aplicación se crea antes de mover el archivo a cuarentena.
-- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.1.0`).
+- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.1.1`).
 
 Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo user-mode y no sustituye un driver firmado.
 
@@ -76,7 +76,7 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 
 ### `dev/v3.0` · Fase 5 — SBOM, avisos y versionado
 
-- `Directory.Build.props` sigue siendo la única fuente del número `3.1.0`: ensamblados, `/healthz`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
+- `Directory.Build.props` sigue siendo la única fuente del número `3.1.1`: ensamblados, `/healthz`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
 - `deploy/Generate-Sbom.ps1` consulta `dotnet list package --include-transitive --format json` y genera un SPDX 2.3 con 50 paquetes (producto, dependencias de ejecución y dependencias de test marcadas como `DEV_DEPENDENCY_OF`). Las licencias se toman de los `.nuspec` reales de la caché NuGet; WebView2 se identifica como `BSD-3-Clause` y su texto se copia a `licenses/`.
 - `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. `EULA-EVALUATION.md` concede una licencia limitada para probar el paquete firmado sin uso comercial; prohíbe distribuirlo, comercializarlo y modificar el código sin permiso escrito.
 - `finish.cmd` acepta opcionalmente `[INTELPACKAGEDIR]` e `[INTELKEYHASH]` (o las variables de entorno del mismo nombre) y `Register-Service.ps1` valida ambas antes de escribirlas en el entorno del SCM. Así el paquete firmado de la Fase 4 puede usarse también en una instalación gestionada.
@@ -122,7 +122,7 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 ### `dev/v3.0` · P1 — CI reproducible sin cambiar la licencia (histórico)
 
 - `.github/workflows/ci.yml` ejecuta en `windows-latest`: restore, build Release, 150 tests con results TRX y la verificación local de despliegue. No publica release, no firma y no necesita secretos.
-- `deploy/Check-Ci.ps1` comprueba la sintaxis de los 13 scripts de despliegue, regenera el SBOM/avisos y los compara con los committed, construye una etapa real con `Setup-Aegis.ps1 -StageOnly` y valida VERSION dependencias de `deploy`, ausencia de `ui-token` y copia byte a byte de los scripts incluidos. Además arranca el servicio publicado en un puerto de loopback libre (`AEGIS_HTTP_PORT`), con los sensores desactivados solo en ese proceso (`AEGIS_MONITOR_DISABLED=1`, el motor de análisis sigue siendo el real) y con un `TEMP` aislado, para que la actividad del runner no se registre como observación. Así comprueba que `POST /api/scan` devuelve una decisión real sin crear `events.jsonl`, `threats.jsonl`, `reputation.json`, ni cambiar contadores, cuarentena o reglas.
+- `deploy/Check-Ci.ps1` comprueba la sintaxis de los 14 scripts de despliegue, regenera el SBOM/avisos y los compara con los committed, construye una etapa real con `Setup-Aegis.ps1 -StageOnly` y valida VERSION dependencias de `deploy`, ausencia de `ui-token` y copia byte a byte de los scripts incluidos. Además arranca el servicio publicado en un puerto de loopback libre (`AEGIS_HTTP_PORT`), con los sensores desactivados solo en ese proceso (`AEGIS_MONITOR_DISABLED=1`, el motor de análisis sigue siendo el real) y con un `TEMP` aislado, para que la actividad del runner no se registre como observación. Así comprueba que la operación IPC `ScanPath` devuelve una decisión real sin crear `events.jsonl`, `threats.jsonl`, `reputation.json`, ni cambiar contadores, cuarentena o reglas, y que HTTP devuelve `405` a `POST /`.
 - Corrección arquitectónica: `POST /api/scan` usa `ScanPathReadOnlyAsync`, que reutiliza el enriquecimiento y la decisión sin persistir ni remediar. La monitorización automática mantiene el flujo completo con remediación.
 - El nombre de la Named Pipe se deriva siempre de `AEGIS_UI_USER_SID` mediante una función compartida en `Aegis.Core`; esa decisión de `dev/v3.0` se refinó en `dev/v3.1`: el token del proceso elevado debe pertenecer a ese mismo SID, por lo que una elevación con otra cuenta administradora se rechaza.
 - `PrivilegedOperation` tiene una única definición en `Aegis.Core`, compartida por servicio, puente WebView2 y pruebas; un test compara los nombres de la SPA con el enum. Un test de integración con el motor real comprueba que la variante de solo lectura no persiste ni remedia, y el extremo HTTP compartido por servicio y UI permite aislar la prueba de CI en un puerto libre.

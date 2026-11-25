@@ -12,6 +12,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
+
 $separator = [IO.Path]::DirectorySeparatorChar
 $PackageDir = [IO.Path]::GetFullPath($PackageDir).TrimEnd($separator)
 if (-not (Test-Path -LiteralPath $PackageDir -PathType Container)) { throw "No se encontró PackageDir: $PackageDir" }
@@ -22,41 +24,6 @@ if ($OutputDir.Equals($PackageDir, [StringComparison]::OrdinalIgnoreCase) -or
     throw 'OutputDir no puede ser PackageDir ni estar dentro de él.'
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-
-function Get-FileSha256([string]$Path) {
-    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-    try {
-        $sha = [Security.Cryptography.SHA256]::Create()
-        try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
-        finally { $sha.Dispose() }
-    }
-    finally { $stream.Dispose() }
-}
-
-function Get-CertificateSha256($Certificate) {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try { return [BitConverter]::ToString($sha.ComputeHash($Certificate.RawData)).Replace('-', '').ToLowerInvariant() }
-    finally { $sha.Dispose() }
-}
-
-function Get-SigningCertificate {
-    if (-not [string]::IsNullOrWhiteSpace($PfxPath)) {
-        if (-not (Test-Path -LiteralPath $PfxPath -PathType Leaf)) { throw "No se encontró el PFX: $PfxPath" }
-        if ($null -eq $PfxPassword) { $PfxPassword = Read-Host 'Contraseña del PFX' -AsSecureString }
-        return Import-PfxCertificate -FilePath $PfxPath -Password $PfxPassword -CertStoreLocation 'Cert:\CurrentUser\My'
-    }
-    if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
-        throw 'Indique -CertificateThumbprint o -PfxPath.'
-    }
-    $wanted = ($CertificateThumbprint -replace '[^A-Fa-f0-9]', '').ToUpperInvariant()
-    if ($wanted.Length -ne 40) { throw 'CertificateThumbprint debe ser una huella SHA-1 de 40 hexadecimales.' }
-    foreach ($store in @('Cert:\CurrentUser\My', 'Cert:\LocalMachine\My')) {
-        foreach ($candidate in Get-ChildItem -LiteralPath $store -ErrorAction SilentlyContinue) {
-            if ($candidate.Thumbprint -ieq $wanted) { return $candidate }
-        }
-    }
-    throw "No se encontró el certificado $wanted en los almacenes personales."
-}
 
 $acceptedStatuses = @('Valid')
 if ($AllowUntrustedTestSigner) {
@@ -73,14 +40,14 @@ $version = [string]$manifest.version
 if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Versión de paquete no válida: $version" }
 $signer = ([string]$manifest.signerCertificateSha256).ToLowerInvariant()
 
-$cert = Get-SigningCertificate
+$cert = Get-AegisSigningCertificate -CertificateThumbprint $CertificateThumbprint -PfxPath $PfxPath -PfxPassword $PfxPassword
 if (-not $cert.HasPrivateKey) { throw 'El certificado indicado no tiene clave privada; no puede firmar.' }
 $codeSigningOid = '1.3.6.1.5.5.7.3.3'
 $eku = @($cert.EnhancedKeyUsageList | ForEach-Object {
     if ($_.ObjectId -is [string]) { $_.ObjectId } else { $_.ObjectId.Value }
 })
 if ($eku -notcontains $codeSigningOid) { throw 'El certificado no tiene el uso extendido de firma de código.' }
-$certSha = Get-CertificateSha256 $cert
+$certSha = Get-AegisCertificateSha256 $cert
 if ($certSha -ne $signer) {
     throw "El certificado elegido ($certSha) no es el que firmó el paquete ($signer)."
 }
@@ -92,7 +59,7 @@ $zipName = "AegisGuard-$version-win-x64.zip"
 $zipPath = Join-Path $OutputDir $zipName
 if (Test-Path -LiteralPath $zipPath -PathType Leaf) { Remove-Item -LiteralPath $zipPath -Force }
 [IO.Compression.ZipFile]::CreateFromDirectory($PackageDir, $zipPath, [IO.Compression.CompressionLevel]::Optimal, $false)
-$zipSha = Get-FileSha256 $zipPath
+$zipSha = Get-AegisFileSha256 $zipPath
 
 $hashPath = Join-Path $OutputDir ($zipName + '.sha256')
 [IO.File]::WriteAllText($hashPath, "$zipSha  $zipName`r`n", (New-Object Text.UTF8Encoding($false)))
@@ -111,7 +78,7 @@ if ($acceptedStatuses -notcontains $signature.Status) {
     throw "No se pudo firmar el sello del ZIP: $($signature.Status) ($($signature.StatusMessage))"
 }
 if ($null -eq $signature.SignerCertificate) { throw 'El sello del ZIP no tiene certificado firmante.' }
-if ((Get-CertificateSha256 $signature.SignerCertificate) -ne $signer) {
+if ((Get-AegisCertificateSha256 $signature.SignerCertificate) -ne $signer) {
     throw 'El sello del ZIP fue firmado por otro certificado.'
 }
 

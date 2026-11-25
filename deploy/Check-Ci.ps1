@@ -2,6 +2,8 @@
 param()
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
+
 $root = Split-Path -Parent $PSScriptRoot
 
 function Assert-True([bool]$Condition, [string]$Message) {
@@ -26,7 +28,7 @@ Write-Host "Sintaxis correcta en $($scripts.Count) scripts de despliegue."
 # Se comprueban uno a uno, incluidos los .cmd, para que quitar uno de la copia
 # no pase desapercibido.
 $packagedScripts = @(
-    'Setup-Aegis.ps1', 'install.cmd', 'finish.cmd', 'uninstall.cmd', 'uninstall.ps1',
+    'Setup-Aegis.ps1', 'Aegis-DeployCommon.ps1', 'install.cmd', 'finish.cmd', 'uninstall.cmd', 'uninstall.ps1',
     'Register-Service.ps1', 'Create-Shortcuts.ps1',
     'Verify-Release.ps1', 'Verify-Archive.ps1', 'Rollback.ps1', 'rollback.cmd'
 )
@@ -236,49 +238,25 @@ try {
         Assert-True ("$health" -eq 'ok') "/healthz devolvió '$health'; esperaba 'ok'."
 
         # El nombre del pipe se deriva del SID exactamente igual que en C#.
-        $sidBytes = [Text.Encoding]::UTF8.GetBytes($authorizedSid)
-        $sha = [Security.Cryptography.SHA256]::Create()
-        $hashBytes = $sha.ComputeHash($sidBytes)
-        $pipeHash = -join ($hashBytes[0..7] | ForEach-Object { $_.ToString('x2') })
-        $pipeName = "aegisguard-$pipeHash-privileged"
-        $sha.Dispose()
+        $pipeName = Get-AegisPrivilegedPipeName $authorizedSid
 
-        function Invoke-Ipc([string]$Operation, [hashtable]$Payload = @{}) {
-            $request = @{ operation = $Operation; payload = $Payload } | ConvertTo-Json -Depth 12 -Compress
-            $client = [IO.Pipes.NamedPipeClientStream]::new(
-                '.', $pipeName, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
-            try {
-                $client.Connect(10000)
-                $bytes = [Text.Encoding]::UTF8.GetBytes($request + "`n")
-                $client.Write($bytes, 0, $bytes.Length)
-                $client.Flush()
-                $reader = [IO.StreamReader]::new($client, [Text.Encoding]::UTF8, $false, 4096, $true)
-                $line = $reader.ReadLine()
-                if (-not $line) { throw "El canal $pipeName no devolvió respuesta para $Operation." }
-                $response = $line | ConvertFrom-Json
-                if (-not $response.ok) { throw "IPC $Operation rechazada: $($response.error)" }
-                return $response.result
-            }
-            finally { $client.Dispose() }
-        }
-
-        $ipcHealth = Invoke-Ipc 'Health'
+        $ipcHealth = Invoke-Ipc -PipeName $pipeName -Operation 'Health'
         Assert-True ($ipcHealth.version -eq $version) `
             "IPC Health informó $($ipcHealth.version); esperaba $version de Directory.Build.props."
 
-        $beforeStatus = Invoke-Ipc 'Status'
+        $beforeStatus = Invoke-Ipc -PipeName $pipeName -Operation 'Status'
         Assert-True ($beforeStatus.monitorActive -eq $false) 'La verificación aislada no desactivó los sensores.'
         Assert-True ($beforeStatus.etwActive -eq $false) 'La verificación aislada no desactivó ETW.'
         Assert-True ($beforeStatus.protectionState -eq 'degraded') `
             'La verificación aislada no informa de protectionState=degraded.'
-        $beforeEvents = @(Invoke-Ipc 'Events' @{ limit = 1000 })
-        $beforeThreats = @(Invoke-Ipc 'Threats' @{ limit = 1000 })
-        $beforeQuarantine = @(Invoke-Ipc 'QuarantineList')
-        $beforeRules = (Invoke-Ipc 'FirewallStats').active
+        $beforeEvents = @(Invoke-Ipc -PipeName $pipeName -Operation 'Events' -Payload @{ limit = 1000 })
+        $beforeThreats = @(Invoke-Ipc -PipeName $pipeName -Operation 'Threats' -Payload @{ limit = 1000 })
+        $beforeQuarantine = @(Invoke-Ipc -PipeName $pipeName -Operation 'QuarantineList')
+        $beforeRules = (Invoke-Ipc -PipeName $pipeName -Operation 'FirewallStats').active
 
         $sample = Join-Path $isolatedTemp 'scan-sample.txt'
         [IO.File]::WriteAllText($sample, 'texto inocuo para comprobar que ScanPath no persiste ni remedia.')
-        $scan = Invoke-Ipc 'ScanPath' @{ path = $sample }
+        $scan = Invoke-Ipc -PipeName $pipeName -Operation 'ScanPath' -Payload @{ path = $sample }
         Assert-True ($null -ne $scan.decision) 'ScanPath no devolvió una decisión real.'
         Assert-True ($scan.report.schemaVersion -eq '1.0') 'ScanPath no devolvió el informe del analizador.'
         Assert-True (@($scan.report.analyzers).Count -eq 6) 'El informe no declara los seis analizadores.'
@@ -287,16 +265,16 @@ try {
         # directorio de estado del servicio, aunque conozca la ruta.
         $denied = $false
         try {
-            [void](Invoke-Ipc 'ScanPath' @{ path = (Join-Path $smokeData 'config.json') })
+            [void](Invoke-Ipc -PipeName $pipeName -Operation 'ScanPath' -Payload @{ path = (Join-Path $smokeData 'config.json') })
         }
         catch { $denied = ($_ | Out-String) -match 'estado' }
         Assert-True $denied 'ScanPath aceptó una ruta dentro del directorio de estado.'
 
-        $afterStatus = Invoke-Ipc 'Status'
-        $afterEvents = @(Invoke-Ipc 'Events' @{ limit = 1000 })
-        $afterThreats = @(Invoke-Ipc 'Threats' @{ limit = 1000 })
-        $afterQuarantine = @(Invoke-Ipc 'QuarantineList')
-        $afterRules = (Invoke-Ipc 'FirewallStats').active
+        $afterStatus = Invoke-Ipc -PipeName $pipeName -Operation 'Status'
+        $afterEvents = @(Invoke-Ipc -PipeName $pipeName -Operation 'Events' -Payload @{ limit = 1000 })
+        $afterThreats = @(Invoke-Ipc -PipeName $pipeName -Operation 'Threats' -Payload @{ limit = 1000 })
+        $afterQuarantine = @(Invoke-Ipc -PipeName $pipeName -Operation 'QuarantineList')
+        $afterRules = (Invoke-Ipc -PipeName $pipeName -Operation 'FirewallStats').active
 
         Assert-True ($afterStatus.eventsTotal -eq $beforeStatus.eventsTotal) 'ScanPath incrementó eventsTotal.'
         Assert-True ($afterStatus.threatsTotal -eq $beforeStatus.threatsTotal) 'ScanPath incrementó threatsTotal.'

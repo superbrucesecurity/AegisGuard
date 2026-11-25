@@ -1,6 +1,6 @@
 # Aviso de terceros
 
-Generado para Aegis Guard 3.1.0 con `deploy/Generate-Sbom.ps1`. Las licencias se leen de los .nuspec de la cachÃ© NuGet local; NOASSERTION significa que el paquete no declara una expresiÃ³n SPDX reconocible.
+Generado para Aegis Guard 3.1.1 con `deploy/Generate-Sbom.ps1`. Las licencias se leen de los .nuspec de la cachÃ© NuGet local; NOASSERTION significa que el paquete no declara una expresiÃ³n SPDX reconocible.
 
 | Paquete | VersiÃ³n | Licencia declarada | Ãmbito | Texto incluido |
 | --- | --- | --- | --- | --- |

@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Aegis-DeployCommon.ps1')
 
 $TargetDir = [IO.Path]::GetFullPath($TargetDir)
 if (-not (Test-Path -LiteralPath $TargetDir -PathType Container)) { throw "No se encontró TargetDir: $TargetDir" }
@@ -26,22 +27,6 @@ $prefix = if ($TargetDir.EndsWith($separator)) { $TargetDir } else { $TargetDir 
 $manifestFullName = $ManifestPath.TrimEnd($separator)
 $stampPath = Join-Path $TargetDir 'RELEASE-SIGNATURES.ps1'
 $stampFullName = $stampPath.TrimEnd($separator)
-
-function Get-FileSha256([string]$Path) {
-    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-    try {
-        $sha = [Security.Cryptography.SHA256]::Create()
-        try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
-        finally { $sha.Dispose() }
-    }
-    finally { $stream.Dispose() }
-}
-
-function Get-CertificateSha256($Certificate) {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try { return [BitConverter]::ToString($sha.ComputeHash($Certificate.RawData)).Replace('-', '').ToLowerInvariant() }
-    finally { $sha.Dispose() }
-}
 
 function Get-SafeFullPath([string]$Relative) {
     if ([string]::IsNullOrWhiteSpace($Relative)) { throw 'El manifiesto contiene una ruta vacía.' }
@@ -109,7 +94,7 @@ if ($acceptedStatuses -notcontains $stampSignature.Status) {
     throw "Sello del manifiesto no válido: $($stampSignature.Status) ($($stampSignature.StatusMessage))"
 }
 if ($null -eq $stampSignature.SignerCertificate) { throw 'El sello del manifiesto no tiene certificado firmante.' }
-if ((Get-CertificateSha256 $stampSignature.SignerCertificate) -ne $manifestSigner) {
+if ((Get-AegisCertificateSha256 $stampSignature.SignerCertificate) -ne $manifestSigner) {
     throw 'El sello del manifiesto fue firmado por otro certificado.'
 }
 if ($manifest.PSObject.Properties.Name -contains 'requiredSignerThumbprint') {
@@ -123,7 +108,7 @@ if ($manifest.PSObject.Properties.Name -contains 'requiredSignerThumbprint') {
 $stampHashes = @(Get-Content -LiteralPath $stampPath |
     Where-Object { $_ -match '^# sha256:([0-9a-fA-F]{64})$' } | ForEach-Object { $Matches[1].ToLowerInvariant() })
 if ($stampHashes.Count -ne 1) { throw 'El sello del manifiesto debe declarar exactamente un SHA-256.' }
-$manifestHash = Get-FileSha256 $ManifestPath
+$manifestHash = Get-AegisFileSha256 $ManifestPath
 if ($stampHashes[0] -ne $manifestHash) { throw 'El manifiesto fue modificado después de firmarse.' }
 
 $entries = @($manifest.files)
@@ -142,7 +127,7 @@ foreach ($entry in $entries) {
     if ($seen.ContainsKey($key)) { throw "Ruta duplicada en el manifiesto: $($entry.path)" }
     $seen[$key] = $true
     $full = Get-SafeFullPath ([string]$entry.path)
-    $actual = Get-FileSha256 $full
+    $actual = Get-AegisFileSha256 $full
     if ($actual -ne $entry.sha256.ToLowerInvariant()) { throw "Hash no coincide: $($entry.path)" }
 
     $isSignable = ($signable -contains [IO.Path]::GetExtension($full).ToLowerInvariant())
@@ -152,7 +137,7 @@ foreach ($entry in $entries) {
             throw "Firma no válida en $($entry.path): $($signature.Status) ($($signature.StatusMessage))"
         }
         if ($null -eq $signature.SignerCertificate) { throw "Sin certificado firmante en $($entry.path)." }
-        $actualCertSha = Get-CertificateSha256 $signature.SignerCertificate
+        $actualCertSha = Get-AegisCertificateSha256 $signature.SignerCertificate
         if ($entry.PSObject.Properties.Name -contains 'signerCertificateSha256') {
             # Las dependencias de terceros conservan su firma original; no se
             # exige que usen la clave del publicador, pero sí que sea la misma

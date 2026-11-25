@@ -174,7 +174,7 @@
       `${number(s.blockedTotal || 0)} / ${number(s.quarantinedTotal || 0)}`;
     $('#kpiResources').textContent = `${number(s.cpuPercent)}% / ${Math.round((s.workingSetBytes || 0) / 1048576)} MB`;
     if (state.health && $('#versionLabel')) $('#versionLabel').textContent =
-      `v${state.health.version || '3.0.0'} · motor local`;
+      `v${state.health.version || '3.0.1'} · motor local`;
 
     const tags = [
       ['Monitorización', s.monitorActive, 'good'],

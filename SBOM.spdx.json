@@ -2,10 +2,10 @@
     "spdxVersion":  "SPDX-2.3",
     "dataLicense":  "CC0-1.0",
     "SPDXID":  "SPDXRef-DOCUMENT",
-    "name":  "AegisGuard-3.0.0",
-    "documentNamespace":  "https://github.com/superbrucesecurity/AegisGuard/spdx/v3.0.0",
+    "name":  "AegisGuard-3.0.1",
+    "documentNamespace":  "https://github.com/superbrucesecurity/AegisGuard/spdx/v3.0.1",
     "creationInfo":  {
-                         "created":  "2026-11-24T22:49:12Z",
+                         "created":  "2026-11-25T12:11:16Z",
                          "creators":  [
                                           "Tool: AegisGuard-Generate-Sbom-1.0",
                                           "Organization: superbrucesecurity"
@@ -18,7 +18,7 @@
                      {
                          "name":  "AegisGuard",
                          "SPDXID":  "SPDXRef-Package-AegisGuard",
-                         "versionInfo":  "3.0.0",
+                         "versionInfo":  "3.0.1",
                          "downloadLocation":  "NOASSERTION",
                          "filesAnalyzed":  false,
                          "licenseConcluded":  "NOASSERTION",

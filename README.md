@@ -31,7 +31,7 @@ En resumen: ETW, watchers y canarios generan observaciones; se normalizan y dedu
 - **Colas:** prioridad para alertas críticas, coalescencia corregida (el primer evento ya no se descarta), contadores reales de descarte y alerta de pérdida de visibilidad. Los duplicados coalescionados se contabilizan en `coalescedEvents`, no como pérdida; solo los descartes reales degradan el estado mostrado.
 - **Token local:** formato validado, recuperación atómica si está corrupto, conservación del archivo inválido y comparación en tiempo constante. La UI recarga una sola vez si el token cambia.
 - **Pipeline:** `ProcessStarted` se enriquece con hash/firma/reglas de la imagen y comprueba PID + tiempo de creación; la regla WFP por aplicación se crea antes de mover el archivo a cuarentena.
-- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.0.0`).
+- **Métricas:** `Block` y `Quarantine` se contabilizan por separado; `MaxEvents` se aplica en caliente; la versión mostrada se lee del ensamblado (`3.0.1`).
 
 Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo user-mode y no sustituye un driver firmado.
 
@@ -67,7 +67,7 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 
 ### `dev/v3.0` · Fase 5 — SBOM, avisos y versionado
 
-- `Directory.Build.props` sigue siendo la única fuente del número `3.0.0`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
+- `Directory.Build.props` sigue siendo la única fuente del número `3.0.1`: ensamblados, `/api/health`, documentación y el archivo `VERSION` instalado leen ese valor. El instalador copia `VERSION`, `SBOM.spdx.json`, `THIRD-PARTY-NOTICES.md`, `LICENSE` y los textos de licencias de terceros al directorio de instalación.
 - `deploy/Generate-Sbom.ps1` consulta `dotnet list package --include-transitive --format json` y genera un SPDX 2.3 con 50 paquetes (producto, dependencias de ejecución y dependencias de test marcadas como `DEV_DEPENDENCY_OF`). Las licencias se toman de los `.nuspec` reales de la caché NuGet; WebView2 se identifica como `BSD-3-Clause` y su texto se copia a `licenses/`.
 - `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. `EULA-EVALUATION.md` concede una licencia limitada para probar el paquete firmado sin uso comercial; prohíbe distribuirlo, comercializarlo y modificar el código sin permiso escrito.
 - `finish.cmd` acepta opcionalmente `[INTELPACKAGEDIR]` e `[INTELKEYHASH]` (o las variables de entorno del mismo nombre) y `Register-Service.ps1` valida ambas antes de escribirlas en el entorno del SCM. Así el paquete firmado de la Fase 4 puede usarse también en una instalación gestionada.
@@ -86,7 +86,7 @@ La SPA se verificó en navegador contra el servicio instalado: muestra `v3.0.0 �
 - `Verify-Release.ps1` exige cadena de confianza válida, huella fijada por el administrador (`-ExpectedSignerSha256` o `AEGIS_RELEASE_SIGNER_SHA256`), coincidencia exacta de hashes y ficheros, rutas sin `..`, enlaces ni escapes del paquete, y un sello Authenticode que protege el propio manifiesto. El instalador ejecuta esa verificación antes de sustituir nada; sin manifiesto se niega salvo `-AllowUnsigned` explícito.
 - La actualización conserva la versión anterior en `-BackupDir` con ACL restringida y la restaura si falla la copia. `Rollback.ps1` verifica el backup, intercambia directorios de forma reversible, reinicia el servicio solo si estaba activo y deja intacto el directorio de estado (cuarentena, historial, reputación y configuración).
 - Prueba aislada con certificado autofirmado temporal (`-AllowUntrustedTestSigner`, solo laboratorio): 64 ficheros verificados (6 propios, 21 de terceros, 37 datos), `VERSION` alterado rechazado, instalación y actualización con backup correctas y rollback que restauró el paquete anterior sin tocar `AEGIS_DATA_DIR`.
-- `Package-Release.ps1` agrupa la etapa en `AegisGuard-3.0.0-win-x64.zip` y añade un sello firmado con el SHA-256 del ZIP; `Verify-Archive.ps1` comprueba el sello y vuelve a verificar el contenido interior. El ZIP incluye la carpeta `deploy` con instalación, verificación, desinstalación y rollback, por lo que es autocontenido. En laboratorio, un ZIP modificado fue rechazado por diferencia de hash.
+- `Package-Release.ps1` agrupa la etapa en `AegisGuard-<versión>-win-x64.zip` y añade un sello firmado con el SHA-256 del ZIP; `Verify-Archive.ps1` comprueba el sello y vuelve a verificar el contenido interior. El ZIP incluye la carpeta `deploy` con instalación, verificación, desinstalación y rollback, por lo que es autocontenido. En laboratorio, un ZIP modificado fue rechazado por diferencia de hash.
 - Los comandos completos y los límites de esta cadena están en [operaciones](docs/OPERACIONES.md) y [seguridad](docs/SEGURIDAD.md). No se desactiva ningún antivirus para firmar, instalar ni probar; la firma no incluye marca de tiempo RFC3161 y el pinning depende de la huella fijada por el administrador.
 
 ### `dev/v3.0` · P0 — superficie administrativa verificable

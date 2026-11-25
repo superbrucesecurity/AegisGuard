@@ -129,14 +129,16 @@ try {
     $smokeData = Join-Path $work 'smoke-data'
     New-Item -ItemType Directory -Force -Path $smokeData | Out-Null
 
-    # El monitor vigila también TEMP (AegisProfilePaths.UserDirectories). Si el
-    # servicio compartiera el TEMP del verificador, la creación de la etapa y
-    # de la muestra generaría eventos propios y los contadores dejarían de ser
-    # una prueba de que POST /api/scan no persiste. Se le da un TEMP vacío.
+    # ETW y los watchers registrarían la actividad del propio runner durante la
+    # ventana de la prueba, que no es causada por POST /api/scan. La verificación
+    # aislada desactiva esos sensores (AEGIS_MONITOR_DISABLED) y además da al
+    # servicio un TEMP vacío, defensa en profundidad si el indicador se retira.
     $isolatedTemp = Join-Path $work 'service-temp'
     New-Item -ItemType Directory -Force -Path $isolatedTemp | Out-Null
 
-    $envNames = @('AEGIS_DATA_DIR', 'AEGIS_RULES_DIR', 'AEGIS_UI_USER_SID', 'AEGIS_HTTP_PORT', 'TMP', 'TEMP')
+    $envNames = @(
+        'AEGIS_DATA_DIR', 'AEGIS_RULES_DIR', 'AEGIS_UI_USER_SID', 'AEGIS_HTTP_PORT',
+        'AEGIS_MONITOR_DISABLED', 'TMP', 'TEMP')
     $previousEnv = @{}
     foreach ($name in $envNames) { $previousEnv[$name] = [Environment]::GetEnvironmentVariable($name) }
     $process = $null
@@ -148,6 +150,7 @@ try {
         [Environment]::SetEnvironmentVariable('AEGIS_UI_USER_SID',
             [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
         [Environment]::SetEnvironmentVariable('AEGIS_HTTP_PORT', [string]$smokePort)
+        [Environment]::SetEnvironmentVariable('AEGIS_MONITOR_DISABLED', '1')
         [Environment]::SetEnvironmentVariable('TMP', $isolatedTemp)
         [Environment]::SetEnvironmentVariable('TEMP', $isolatedTemp)
 
@@ -197,20 +200,6 @@ try {
         $afterThreats = @(Get-Api '/api/threats')
         $afterQuarantine = @(Get-Api '/api/quarantine')
         $afterRules = (Get-Api '/api/firewall/stats').active
-
-        if ($afterStatus.eventsTotal -ne $beforeStatus.eventsTotal) {
-            $beforeIds = @($beforeEvents | ForEach-Object { $_.id })
-            $newEvents = @($afterEvents | Where-Object { $beforeIds -notcontains $_.id })
-            Write-Host "DIAG eventsTotal $($beforeStatus.eventsTotal) -> $($afterStatus.eventsTotal); nuevos $($newEvents.Count)."
-            Write-Host "DIAG before=$($beforeStatus | ConvertTo-Json -Compress -Depth 4)"
-            Write-Host "DIAG after=$($afterStatus | ConvertTo-Json -Compress -Depth 4)"
-            $newEvents | Select-Object -Last 10 id, kind, subject, source, processId, timestamp |
-                Format-Table -AutoSize | Out-String | Write-Host
-            $idleBefore = (Get-Api '/api/status').eventsTotal
-            Start-Sleep -Milliseconds 800
-            $idleAfter = (Get-Api '/api/status').eventsTotal
-            Write-Host "DIAG sin peticiones: $idleBefore -> $idleAfter"
-        }
 
         Assert-True ($afterStatus.eventsTotal -eq $beforeStatus.eventsTotal) 'POST /api/scan incrementó eventsTotal.'
         Assert-True ($afterStatus.threatsTotal -eq $beforeStatus.threatsTotal) 'POST /api/scan incrementó threatsTotal.'

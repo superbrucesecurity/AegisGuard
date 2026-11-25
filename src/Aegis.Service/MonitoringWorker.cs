@@ -28,6 +28,13 @@ public sealed class MonitoringWorker : BackgroundService
     private Task? _etwTask;
     private volatile bool _etwActive;
 
+    // Solo para verificaciones aisladas: permite comprobar el motor de análisis
+    // sin que la actividad del propio runner llegue como observación. Nunca se
+    // usa en una instalación; el estado informa de que la protección está
+    // limitada mientras el indicador está activo.
+    private static bool MonitoringDisabled =>
+        string.Equals(Environment.GetEnvironmentVariable("AEGIS_MONITOR_DISABLED"), "1", StringComparison.Ordinal);
+
     private static readonly Guid ProcessProvider = new("22FB2CD6-0E7B-422B-A0C7-72FAD1F8D607");
     private static readonly Guid NetworkProvider = new("7DD42A49-5329-4832-8DFD-43D979153A88");
     private static readonly Guid RegistryProvider = new("70EB4F03-C1DE-4F73-A051-33D13D5413BD");
@@ -45,26 +52,33 @@ public sealed class MonitoringWorker : BackgroundService
     {
         _stoppingToken = stoppingToken;
         _processorTask = Task.Run(() => ProcessQueueAsync(stoppingToken), stoppingToken);
-        if (_canary.ManifestTampered)
+        var sensorsDisabled = MonitoringDisabled;
+        if (!sensorsDisabled)
         {
-            _logger.LogWarning("El manifiesto de canarios no supera la comprobación de integridad local.");
-            Enqueue(new Observation
+            if (_canary.ManifestTampered)
             {
-                Kind = EventKind.PersistenceChanged,
-                Subject = _canary.ManifestPath,
-                BehaviorFlags = ["canary_manifest_tampered"],
-                Source = "canary-manifest"
-            });
+                _logger.LogWarning("El manifiesto de canarios no supera la comprobación de integridad local.");
+                Enqueue(new Observation
+                {
+                    Kind = EventKind.PersistenceChanged,
+                    Subject = _canary.ManifestPath,
+                    BehaviorFlags = ["canary_manifest_tampered"],
+                    Source = "canary-manifest"
+                });
+            }
+            StartEtw(stoppingToken);
+            StartFileWatchers();
         }
-        StartEtw(stoppingToken);
-        StartFileWatchers();
         // El respaldo arranca solo si ETW no está disponible o se detiene.
-        var fallback = StartProcessSnapshotAsync(stoppingToken);
-        var canaryLoop = StartCanaryLoopAsync(stoppingToken);
+        var fallback = sensorsDisabled ? Task.CompletedTask : StartProcessSnapshotAsync(stoppingToken);
+        var canaryLoop = sensorsDisabled ? Task.CompletedTask : StartCanaryLoopAsync(stoppingToken);
         var queueMonitor = StartQueueMonitorAsync(stoppingToken);
 
-        _state.MonitorActive = true;
-        _logger.LogInformation("Aegis Guard monitorización activa. ETW={Etw}, watchers={Watchers}", _etwActive, _watchers.Count);
+        _state.MonitorActive = !sensorsDisabled;
+        if (sensorsDisabled)
+            _logger.LogInformation("Sensores desactivados por AEGIS_MONITOR_DISABLED; verificación aislada.");
+        else
+            _logger.LogInformation("Aegis Guard monitorización activa. ETW={Etw}, watchers={Watchers}", _etwActive, _watchers.Count);
 
         await Task.WhenAll(_processorTask, fallback, canaryLoop, queueMonitor, _etwTask ?? Task.CompletedTask).ConfigureAwait(false);
     }

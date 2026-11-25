@@ -92,6 +92,29 @@ Prueba aislada realizada con un certificado autofirmado temporal y el interrupto
 
 Límites honestos: la firma Authenticode se generó sin marca de tiempo RFC3161, por lo que la validez depende de que el certificado y su cadena sigan siendo válidos en el momento de instalar. El `key pinning` depende de que la huella introducida por el administrador sea la correcta; verifíquela por un canal independiente antes de fijarla. Este mecanismo protege la distribución y el rollback, no convierte al proceso en inmune a un atacante con privilegios administrativos en el equipo. No se desactiva Microsoft Defender, Bitdefender ni ningún otro producto para firmar, instalar o probar.
 
+### Paquete descargable
+
+`deploy/Package-Release.ps1` crea un único artefacto a partir de una etapa ya firmada. Antes de comprimir, ejecuta `Verify-Release.ps1`; si la carpeta no supera la verificación, no genera el ZIP. El resultado es `AegisGuard-<versión>-win-x64.zip`, un `.sha256` informativo y `AegisGuard-<versión>-win-x64.stamp.ps1`. El sello está firmado con Authenticode por el **mismo certificado** que el paquete interior y declara el SHA-256 del ZIP y la huella del firmante.
+
+Authenticode no puede firmar un ZIP de forma que Windows lo valide como si fuera un ejecutable; por eso la prueba es el sello independiente, no una supuesta firma directa del ZIP. El `.sha256` es solo una comodidad: puede modificarse, mientras que el sello firmado no.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Package-Release.ps1 `
+  -PackageDir .\stage -OutputDir .\dist -CertificateThumbprint <huella-sha1> `
+  -ExpectedSignerSha256 $signer
+```
+
+Quien descarga el artefacto debe verificarlo antes de instalar. Por defecto, `Verify-Archive.ps1` valida el sello, el SHA-256 del ZIP, extrae el contenido a una carpeta temporal y ejecuta de nuevo `Verify-Release.ps1` con la huella del propio sello:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Verify-Archive.ps1 `
+  -OutputDir .\dist -ExpectedSignerSha256 $signer
+```
+
+Con `-SkipPackageContents` solo comprueba el sello y el hash del ZIP. `-AllowUntrustedTestSigner` existe únicamente para laboratorio con certificados autofirmados y nunca debe usarse para publicar.
+
+Prueba aislada con certificado autofirmado temporal: se generaron los tres artefactos, `Verify-Archive.ps1` validó el sello, el SHA-256 y los 65 ficheros del paquete interior, y un ZIP modificado fue rechazado por diferencia de hash. No se publicó ese paquete de laboratorio ni se usó un certificado de producción.
+
 ## Trazabilidad de la distribución
 
 `deploy/Generate-Sbom.ps1` genera `SBOM.spdx.json` (SPDX 2.3) y `THIRD-PARTY-NOTICES.md` a partir de `dotnet list package --include-transitive --format json` y de los `.nuspec` reales de la caché NuGet. El instalador copia ambos archivos, `LICENSE`, `EULA-EVALUATION.md`, `VERSION` y los textos de licencias de terceros (`licenses/`) al directorio de instalación.

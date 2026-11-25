@@ -30,8 +30,8 @@ public sealed class MonitoringWorker : BackgroundService
 
     // Solo para verificaciones aisladas: permite comprobar el motor de análisis
     // sin que la actividad del propio runner llegue como observación. Nunca se
-    // usa en una instalación; el estado informa de que la protección está
-    // limitada mientras el indicador está activo.
+    // usa en una instalación; RuntimeState informa de protectionState=degraded
+    // mientras el indicador está activo (limited es solo falta de firewall).
     private static bool MonitoringDisabled =>
         string.Equals(Environment.GetEnvironmentVariable("AEGIS_MONITOR_DISABLED"), "1", StringComparison.Ordinal);
 

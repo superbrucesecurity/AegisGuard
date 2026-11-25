@@ -183,6 +183,10 @@ try {
         }
 
         $beforeStatus = Get-Api '/api/status'
+        Assert-True ($beforeStatus.monitorActive -eq $false) 'La verificación aislada no desactivó los sensores.'
+        Assert-True ($beforeStatus.etwActive -eq $false) 'La verificación aislada no desactivó ETW.'
+        Assert-True ($beforeStatus.protectionState -eq 'degraded') `
+            'La verificación aislada no informa de protectionState=degraded.'
         $beforeEvents = @(Get-Api '/api/events')
         $beforeThreats = @(Get-Api '/api/threats')
         $beforeQuarantine = @(Get-Api '/api/quarantine')

@@ -83,5 +83,5 @@ La sustitución guarda la instalación anterior en `-BackupDir`, restringe su AC
 
 - No desactive Microsoft Defender, Bitdefender ni otro producto de seguridad para ejecutar las pruebas EICAR. Si **Ayuda → Ejecutar prueba EICAR** informa de que la muestra fue bloqueada antes del análisis, ese es el resultado: Aegis no la sustituye ni la presenta como detectada por su motor.
 - No exponga el puerto HTTP local (8787 por defecto, o `AEGIS_HTTP_PORT`) mediante reglas de firewall de entrada.
-- No definir `AEGIS_MONITOR_DISABLED=1` en una instalación real: deja los watchers, ETW y canarios sin iniciar y `/api/status` informa de protección limitada. Solo se usa en el proceso aislado de `Check-Ci.ps1` para que la actividad del runner no se cuente como observación del motor.
+- No definir `AEGIS_MONITOR_DISABLED=1` en una instalación real: deja los watchers, ETW y canarios sin iniciar y `/api/status` informa de `protectionState=degraded`. El estado `limited` se reserva para cuando falta el firewall de Windows. Solo se usa en el proceso aislado de `Check-Ci.ps1` para que la actividad del runner no se cuente como observación del motor.
 - No interprete un veredicto `Allow` como garantía de inocuidad: es una decisión con umbrales locales, no una certificación.

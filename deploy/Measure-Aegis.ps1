@@ -187,22 +187,12 @@ try {
     }
 
     # El estado se lee antes de la fase de carga para conservar la línea base.
-    $tokenPath = Join-Path $DataDir 'ui-token'
-    $token = $null
-    if (Test-Path -LiteralPath $tokenPath) { $token = (Get-Content -LiteralPath $tokenPath -Raw).Trim() }
-    $headers = if ($token) { @{ Authorization = "Bearer $token" } } else { @{} }
-    try { $status = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -Headers $headers -TimeoutSec 5 }
+    # Ya no existe token local: las lecturas HTTP son anónimas y solo en loopback.
+    try { $status = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -TimeoutSec 5 }
     catch { $status = $null }
 
     $load = $null
     if (-not $SkipLoad) {
-        if (-not $token) {
-            $load = [ordered]@{
-                performed = $false
-                reason = "No se encontró $tokenPath; no se realizó la fase de carga."
-            }
-        }
-        else {
             $loadDir = Join-Path $DataDir ('benchmark-load-' + [guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Force -Path $loadDir | Out-Null
             # Señales para el analizador de scripts, construidas en tiempo de
@@ -227,7 +217,7 @@ try {
 
             $before = $null
             $after = $null
-            try { $before = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -Headers $headers -TimeoutSec 5 } catch { }
+            try { $before = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -TimeoutSec 5 } catch { }
             $latencies = @()
             $verdicts = @{}
             $errors = @()
@@ -238,7 +228,7 @@ try {
                 try {
                     $body = @{ path = $path } | ConvertTo-Json -Compress
                     $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8787/api/scan' -Method Post -Body $body `
-                        -ContentType 'application/json' -Headers $headers -UseBasicParsing -TimeoutSec 60
+                        -ContentType 'application/json' -UseBasicParsing -TimeoutSec 60
                     $watch.Stop()
                     $latency = [Math]::Round($watch.Elapsed.TotalMilliseconds, 2)
                     $latencies += [double]$latency
@@ -256,7 +246,7 @@ try {
                 }
             }
             $overall.Stop()
-            try { $after = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -Headers $headers -TimeoutSec 5 } catch { }
+            try { $after = Invoke-RestMethod 'http://127.0.0.1:8787/api/status' -TimeoutSec 5 } catch { }
             $sorted = @($latencies | Sort-Object)
             $delta = if ($null -ne $before -and $null -ne $after) {
                 [ordered]@{
@@ -288,7 +278,6 @@ try {
                 } else { $null }
                 errors              = $errors
             }
-        }
     }
 }
 finally {

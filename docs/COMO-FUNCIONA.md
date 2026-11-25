@@ -79,7 +79,7 @@ En modo aprendizaje las decisiones se registran, pero no se aplican cuarentena n
 
 ## 5. Interfaz y API
 
-La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). El token local persiste en `%AEGIS_DATA_DIR%\ui-token` (por defecto `C:\ProgramData\AegisGuard\ui-token`) y se inyecta en la página como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. Si el archivo está corrupto se regenera de forma atómica y la SPA se recarga una vez. Todas las rutas `/api` exigen `Bearer` comparado en tiempo constante y solo escuchan en `127.0.0.1`; `/healthz` es público y no expone estado.
+La UI es una SPA servida por el propio servicio y mostrada en WebView2 (`Aegis.UI`). No hay token local ni credenciales inyectadas en la página: las rutas `/api` solo sirven lecturas y análisis en `127.0.0.1`, y `/healthz` es público. Para restaurar/purgar cuarentena, gestionar reglas o cambiar la política, WebView2 llama al objeto nativo `aegis`, que solicita elevación UAC y habla con el servicio por Named Pipe. El servicio verifica el PID, el SID, la integridad y el tipo de elevación del proceso cliente antes de actuar, y registra cada intento.
 
 Los datos mostrados son reales: no hay valores de ejemplo ni controles decorativos.
 

@@ -140,27 +140,19 @@ if (-not $service -or $service.Status -ne 'Running') {
     throw "El servicio $ServiceName no alcanzo el estado Running."
 }
 
-$tokenPath = Join-Path $DataDir 'ui-token'
-for ($i = 0; $i -lt 20 -and -not (Test-Path -LiteralPath $tokenPath); $i++) {
-    Start-Sleep -Milliseconds 500
-}
-if (-not (Test-Path -LiteralPath $tokenPath)) {
-    throw "El servicio no genero $tokenPath."
-}
-
-$token = (Get-Content -LiteralPath $tokenPath -Raw).Trim()
-$headers = @{ Authorization = "Bearer $token" }
+# Ya no hay credenciales de archivo: la comprobación usa los endpoints sin
+# autenticación que solo confirman que el proceso responde.
 $health = $null
 for ($i = 0; $i -lt 20; $i++) {
     try {
-        $health = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -Headers $headers -TimeoutSec 2
+        $health = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -TimeoutSec 2
         break
     } catch {
         Start-Sleep -Milliseconds 500
     }
 }
 if (-not $health) {
-    throw 'El servicio responde pero la API local con token no devolvio /api/health.'
+    throw 'El servicio responde pero /api/health no devolvio una respuesta valida.'
 }
 
 [pscustomobject]@{

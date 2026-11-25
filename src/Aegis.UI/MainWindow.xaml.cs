@@ -35,22 +35,12 @@ public partial class MainWindow : Window
             settings.IsPasswordAutosaveEnabled = false;
             settings.IsGeneralAutofillEnabled = false;
             settings.IsZoomControlEnabled = false;
-            settings.AreHostObjectsAllowed = false;
+            settings.AreHostObjectsAllowed = true;
             settings.IsWebMessageEnabled = false;
 
-            var token = ReadToken();
-            if (!string.IsNullOrEmpty(token))
-            {
-                // El token solo se expone al origen local; una navegación externa
-                // accidental no debe recibir la credencial del servicio.
-                var script = $"if (location.origin === 'http://127.0.0.1:8787') " +
-                             $"window.AEGIS_TOKEN = {JsonSerializer.Serialize(token)};";
-                await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script).ConfigureAwait(true);
-            }
-            else
-            {
-                StatusText.Text = "No se pudo leer la credencial local del servicio.";
-            }
+            // La SPA no recibe ninguna credencial. Las operaciones sensibles
+            // pasan por este objeto nativo, que comprueba la elevación con UAC.
+            Browser.CoreWebView2.AddHostObjectToScript("aegis", new AegisBridge());
 
             Browser.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
             Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
@@ -78,8 +68,8 @@ public partial class MainWindow : Window
         if (_retryCts.IsCancellationRequested) return;
         if (e.IsSuccess)
         {
-            // NavigationCompleted solo indica que se cargó la página; la API
-            // puede estar devolviendo 401. El estado real lo muestra la SPA.
+            // NavigationCompleted solo indica que se cargó la página; el estado
+            // real de protección lo muestra la SPA con los datos del servicio.
             StatusText.Text = "Interfaz cargada · compruebe el estado de la API";
             return;
         }
@@ -99,19 +89,6 @@ public partial class MainWindow : Window
         }
         if (!_retryCts.IsCancellationRequested && Browser.CoreWebView2 is not null)
             Browser.CoreWebView2.Navigate(DashboardUrl);
-    }
-
-    private static string ReadToken()
-    {
-        var path = Path.Combine(AegisPaths.DataRoot, "ui-token");
-        try
-        {
-            return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return string.Empty;
-        }
     }
 
     private void TitleBar_Drag(object sender, MouseButtonEventArgs e)

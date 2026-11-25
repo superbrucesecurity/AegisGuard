@@ -18,10 +18,10 @@ if "%INTELDIR%"=="" set "INTELDIR=%AEGIS_INTEL_PACKAGE_DIR%"
 set "INTELHASH=%~7"
 if "%INTELHASH%"=="" set "INTELHASH=%AEGIS_INTEL_KEY_SHA256%"
 
-for /f %%u in ('powershell.exe -NoProfile -Command "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"') do set "USERSID=*%%u"
-
 echo Restringiendo permisos de %DATADIR%...
-icacls "%DATADIR%" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "%USERSID%:(OI)(CI)F" /T >nul
+rem La UI no lee archivos de estado: solo SYSTEM y administradores deben
+rem tener acceso directo a configuracion, historial, claves y cuarentena.
+icacls "%DATADIR%" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T >nul
 if errorlevel 1 goto :fail
 
 echo Registrando el servicio SCM con inicio automatico...

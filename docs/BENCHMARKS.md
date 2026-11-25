@@ -14,10 +14,10 @@ El script:
 2. Muestrea cada segundo CPU (dividida entre `[Environment]::ProcessorCount`), `WorkingSet64`, bytes privados, lecturas/escrituras acumuladas del árbol de procesos (`Win32_Process.ReadTransferCount`/`WriteTransferCount`) y número de procesos del servicio.
 3. Con `-LaunchUi`, inicia `Aegis.UI.exe` y cuenta sus procesos `msedgewebview2.exe` descendientes y su RAM. Esa memoria se informa por separado: no se suma a la del servicio. Al terminar detiene solo la UI y los WebView2 que creó.
 4. Consulta `/api/status` antes de la fase de carga para conservar la línea base real de monitorización, ETW, firewall, colas y contadores.
-5. Fase de carga (omitible con `-SkipLoad`): crea ficheros sintéticos no ejecutables con señales para el analizador de scripts, envía `POST /api/scan` autenticados y registra latencia media/p95/máxima, throughput, veredictos y deltas de `eventsTotal`, `threatsTotal`, `droppedEvents` y `coalescedEvents`. Los ficheros se borran al terminar.
+5. Fase de carga (omitible con `-SkipLoad`): crea ficheros sintéticos no ejecutables con señales para el analizador de scripts, envía `POST /api/scan` y registra latencia media/p95/máxima, throughput, veredictos y deltas de `eventsTotal`, `threatsTotal`, `droppedEvents` y `coalescedEvents`. Los ficheros se borran al terminar.
 6. Escribe un JSON en `artifacts/benchmark.json` (directorio ignorado por Git). Si el servicio o la UI los inició el script, los detiene al terminar.
 
-Parámetros adicionales: `-SkipLoad`, `-ScanCount <n>`, `-LargeFileBytes <bytes>`, `-Configuration Debug|Release`, `-DataDir <ruta>` y `-OutputPath <archivo>`. Si no hay `ui-token` en `DataDir`, la fase de carga se omite y se indica el motivo; nunca se inventan latencias.
+Parámetros adicionales: `-SkipLoad`, `-ScanCount <n>`, `-LargeFileBytes <bytes>`, `-Configuration Debug|Release`, `-DataDir <ruta>` y `-OutputPath <archivo>`. Si el servicio no responde, la fase de carga se omite y se indica el motivo; nunca se inventan latencias.
 
 ## Medición de referencia
 

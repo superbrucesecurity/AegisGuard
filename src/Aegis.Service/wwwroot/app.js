@@ -1,12 +1,29 @@
 (() => {
   'use strict';
 
-  let token = typeof window.AEGIS_TOKEN === 'string' ? window.AEGIS_TOKEN : '';
-  let authRefreshPending = false;
-  const authFlag = 'aegis-auth-refresh';
-  const readAuthFlag = () => {
-    try { return sessionStorage.getItem(authFlag) === '1'; } catch { return false; }
-  };
+  // Las operaciones sensibles no se envían por HTTP: pasan por el objeto
+  // nativo 'aegis', que exige elevación real. La SPA no posee credenciales.
+  const privilegedRoutes = [
+    { method: 'POST', re: /^\/api\/firewall\/rules\/?$/, op: 'FirewallAddRule' },
+    { method: 'DELETE', re: /^\/api\/firewall\/rules\/(.+)$/, op: 'FirewallRemoveRule',
+      payload: m => ({ name: decodeURIComponent(m[1]) }) },
+    { method: 'POST', re: /^\/api\/quarantine\/([^/]+)\/restore\/?$/, op: 'QuarantineRestore',
+      payload: m => ({ id: decodeURIComponent(m[1]) }) },
+    { method: 'DELETE', re: /^\/api\/quarantine\/([^/]+)\/?$/, op: 'QuarantinePurge',
+      payload: m => ({ id: decodeURIComponent(m[1]) }) },
+    { method: 'PUT', re: /^\/api\/settings\/?$/, op: 'PolicyChange',
+      payload: (_, body) => ({ policy: body }) }
+  ];
+
+  async function privilegedCall(operation, payload) {
+    const bridge = window.chrome && window.chrome.webview &&
+      window.chrome.webview.hostObjects && window.chrome.webview.hostObjects.aegis;
+    if (!bridge) throw new Error('El puente privilegiado no está disponible; use la aplicación de escritorio.');
+    const raw = await bridge.invoke(operation, JSON.stringify(payload));
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (data && data.ok === false) throw new Error(data.error || 'Operación rechazada.');
+    return data;
+  }
   const state = {
     health: null,
     status: null,
@@ -57,20 +74,19 @@
   };
 
   async function api(path, options = {}) {
-    const headers = { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) };
+    const method = (options.method || 'GET').toUpperCase();
+    for (const route of privilegedRoutes) {
+      if (route.method !== method) continue;
+      const match = path.match(route.re);
+      if (!match) continue;
+      const body = options.body ? JSON.parse(options.body) : {};
+      const payload = route.payload ? route.payload(match, body) : body;
+      return privilegedCall(route.op, payload);
+    }
+
+    const headers = { Accept: 'application/json', ...(options.headers || {}) };
     if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
     const response = await fetch(path, { ...options, headers, cache: 'no-store' });
-    if (response.status === 401) {
-      // Si el servicio regeneró ui-token, WebView2 vuelve a inyectarlo al
-      // recargar. Se permite una sola recarga para no entrar en un bucle.
-      if (token && !authRefreshPending && !readAuthFlag()) {
-        authRefreshPending = true;
-        try { sessionStorage.setItem(authFlag, '1'); } catch { /* almacenamiento no disponible */ }
-        window.location.reload();
-        throw new Error('La credencial local cambió; recargando la interfaz…');
-      }
-      throw new Error('El servicio rechazó la credencial local. Reinicie AEGIS Guard.');
-    }
     if (response.status === 403) {
       throw new Error('Acceso denegado: la interfaz debe abrirse desde 127.0.0.1.');
     }
@@ -79,7 +95,6 @@
       try { detail = (await response.json()).error || ''; } catch { /* cuerpo no JSON */ }
       throw new Error(detail || `Error HTTP ${response.status}`);
     }
-    try { sessionStorage.removeItem(authFlag); } catch { /* almacenamiento no disponible */ }
     if (response.status === 204) return null;
     return response.json();
   }
@@ -587,7 +602,6 @@
     });
 
     window.addEventListener('resize', () => { if (state.view === 'dashboard') drawChart(); });
-    if (!token) toast('No se encontró la credencial local; reinicie la aplicación de escritorio.', true);
   }
 
   bind();

@@ -14,10 +14,11 @@ var managedByScm = OperatingSystem.IsWindows() &&
 
 var appRoot = AegisPaths.DataRoot;
 Directory.CreateDirectory(appRoot);
+// Repara ACL de instalaciones anteriores antes de leer configuración, claves,
+// historial o cuarentena. La UI no necesita acceso directo a estos archivos.
+if (OperatingSystem.IsWindows()) LocalFileAcl.RestrictTree(appRoot);
 
 var config = ConfigStore.Load(appRoot);
-var tokens = new ApiTokenProvider(appRoot);
-tokens.LoadOrCreate();
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -59,6 +60,9 @@ if (!string.IsNullOrWhiteSpace(trustedKeyHash) && !string.IsNullOrWhiteSpace(pac
     IntelPackage.TryVerify(packageDir, out var package, out packageError))
 {
     var keyFile = Path.Combine(packageDir, IntelPackage.PublicKeyFileName);
+    // La clave pública fijada no es secreta, pero su integridad sí: se impide
+    // que un usuario estándar pueda sustituirla en el directorio del paquete.
+    if (OperatingSystem.IsWindows()) LocalFileAcl.Restrict(keyFile);
     var keyDocument = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(keyFile));
     var actualKeyHash = keyDocument.GetProperty("sha256").GetString();
     if (string.Equals(actualKeyHash, trustedKeyHash, StringComparison.OrdinalIgnoreCase))
@@ -130,9 +134,35 @@ app.Use(async (context, next) =>
             context.Response.StatusCode = 403;
             return;
         }
-        if (!tokens.Matches(context.Request.Headers.Authorization.ToString()))
+        // La API HTTP sólo sirve lecturas y análisis. La credencial Bearer se
+        // eliminó: las operaciones sensibles se atienden por tubería con
+        // identidad verificada. Se valida el origen para frenar DNS rebinding
+        // y solicitudes cross-site desde páginas del propio equipo.
+        var origin = context.Request.Headers.Origin.ToString();
+        if (!string.IsNullOrEmpty(origin) &&
+            !string.Equals(origin, "http://127.0.0.1:8787", StringComparison.OrdinalIgnoreCase))
         {
-            context.Response.StatusCode = 401;
+            context.Response.StatusCode = 403;
+            return;
+        }
+        var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
+        if (!string.IsNullOrEmpty(fetchSite) &&
+            !string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.StatusCode = 403;
+            return;
+        }
+        // Las mutaciones sensibles ya no están registradas. Sin esta guarda,
+        // MapFallbackToFile podría responder index.html a un POST/DELETE/PUT
+        // y hacer creer que la operación existe.
+        var isRead = HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method);
+        var isAllowedAnalysis =
+            HttpMethods.IsPost(context.Request.Method) &&
+            (context.Request.Path.Equals("/api/scan", StringComparison.OrdinalIgnoreCase) ||
+             context.Request.Path.Equals("/api/selftest/eicar", StringComparison.OrdinalIgnoreCase));
+        if (!isRead && !isAllowedAnalysis)
+        {
+            context.Response.StatusCode = 405;
             return;
         }
     }
@@ -145,6 +175,19 @@ app.UseStaticFiles();
 var pipeline = app.Services.GetRequiredService<DetectionPipeline>();
 var firewall = app.Services.GetRequiredService<FirewallManager>();
 var quarantine = app.Services.GetRequiredService<QuarantineManager>();
+
+// Superficie administrativa: tubería con ACL, identidad verificada,
+// autorización por operación y auditoría de todos los intentos.
+if (OperatingSystem.IsWindows())
+{
+    var privilegedAudit = new PrivilegedAuditLog(appRoot);
+    var privilegedDispatcher = new PrivilegedIpcDispatcher(config, state, store, quarantine, firewall);
+    var privilegedIpc = new PrivilegedIpcServer(
+        PrivilegedIpcEndpoints.PipeNameForCurrentUser(), privilegedDispatcher, privilegedAudit, app.Logger);
+    var ipcCts = new CancellationTokenSource();
+    _ = Task.Run(() => privilegedIpc.RunAsync(ipcCts.Token));
+    lifetime.ApplicationStopping.Register(() => ipcCts.Cancel());
+}
 
 // healthz es público y no expone estado interno: solo confirma que el proceso responde.
 app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
@@ -194,36 +237,8 @@ app.MapGet("/api/threats", (int limit = 100, int skip = 0, string? severity = nu
 
 app.MapGet("/api/quarantine", async () => Results.Json(await quarantine.ListAsync(), JsonDefaults.Options));
 
-app.MapPost("/api/quarantine/{id}/restore", async (string id) =>
-{
-    var item = await quarantine.GetAsync(id);
-    if (item is null) return Results.NotFound(new { error = "elemento no restaurable" });
-    try
-    {
-        if (!await quarantine.RestoreAsync(id))
-            return Results.NotFound(new { error = "elemento no restaurable" });
-    }
-    catch (IOException ex)
-    {
-        return Results.Conflict(new { error = ex.Message });
-    }
-    // QuarantineItem.Id y ThreatRecord.Id son GUID distintos: hay que usar
-    // ThreatId para que /api/threats refleje la acción del usuario.
-    await store.MarkRemediatedAsync(item.ThreatId, "restaurado por usuario");
-    // El fichero vuelve al equipo: retirar el bloqueo de red huérfano.
-    firewall.RemoveRulesForThreat(item.ThreatId);
-    return Results.Ok(new { restored = true });
-});
-
-app.MapDelete("/api/quarantine/{id}", async (string id) =>
-{
-    var item = await quarantine.GetAsync(id);
-    if (item is null) return Results.NotFound();
-    if (!await quarantine.PurgeAsync(id)) return Results.NotFound();
-    await store.MarkRemediatedAsync(item.ThreatId, "purgado por usuario");
-    firewall.RemoveRulesForThreat(item.ThreatId);
-    return Results.Ok(new { purged = true });
-});
+// Las mutaciones de cuarentena, firewall y política NO están expuestas por
+// HTTP. Se atienden únicamente por IPC con elevación real y auditoría.
 
 app.MapGet("/api/firewall/rules", () => Results.Json(firewall.ListRuleNames(), JsonDefaults.Options));
 
@@ -238,33 +253,9 @@ app.MapGet("/api/firewall/stats", () =>
     }, JsonDefaults.Options);
 });
 
-app.MapPost("/api/firewall/rules", (FirewallRuleSpec spec) =>
-{
-    spec.Name = spec.Name.StartsWith(firewall.ProductPrefix, StringComparison.OrdinalIgnoreCase)
-        ? spec.Name
-        : firewall.BuildRuleName(spec);
-    var ok = firewall.AddRule(spec);
-    return ok ? Results.Ok(new { name = spec.Name }) : Results.BadRequest(new { error = "no se pudo crear la regla" });
-});
-
-app.MapDelete("/api/firewall/rules/{**name}", (string name) =>
-    firewall.RemoveRule(name) ? Results.Ok(new { removed = true }) : Results.NotFound());
-
 app.MapGet("/api/firewall/learned", () => Results.Json(pipeline.LearnedConnections, JsonDefaults.Options));
 
 app.MapGet("/api/settings", () => Results.Json(state.GetPolicy(), JsonDefaults.Options));
-
-app.MapPut("/api/settings", (PolicySettings policy) =>
-{
-    policy.Validate();
-    // Persistir primero evita que la UI muestre valores rechazados por Validate.
-    config.SavePolicy(policy);
-    state.UpdatePolicy(config.Policy);
-    // Aplicar el límite en caliente: la UI no debe exigir reiniciar el servicio
-    // para reducir o ampliar el historial en memoria.
-    store.SetMaxEvents(policy.MaxEvents);
-    return Results.Ok(state.GetPolicy());
-});
 
 app.MapPost("/api/selftest/eicar", async (CancellationToken ct) =>
     Results.Json(await pipeline.SelfTestEicarAsync(ct).ConfigureAwait(false), JsonDefaults.Options));

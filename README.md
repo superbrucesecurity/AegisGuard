@@ -42,7 +42,7 @@ Estas correcciones están cubiertas por tests nuevos; el servicio sigue siendo u
 - Logs en el registro de eventos de Windows con el proveedor del nombre del servicio, verificado con entradas reales. La API `/api/status` informa de `serviceName` y `managedByScm`.
 - La desinstalación detiene y elimina el servicio, limpia la tarea heredada y elimina el proveedor del registro de eventos. `run-service.cmd` queda únicamente para diagnóstico manual.
 
-Ciclo verificado en ruta aislada: `install.cmd` → `finish.cmd` → servicio `Running`/`Auto` → API `3.0.0` con token → `uninstall.cmd`. El estado final fue `learning` con `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `droppedEvents=0`, `coalescedEvents=5` y 9 entradas reales en el registro de eventos.
+Ciclo verificado en ruta aislada: `install.cmd` → `finish.cmd` → servicio `Running`/`Auto` → API `3.0.0` → `uninstall.cmd`. El estado final fue `learning` con `monitorActive=true`, `etwActive=true`, `firewallActive=true`, `droppedEvents=0`, `coalescedEvents=5` y 9 entradas reales en el registro de eventos.
 
 La SPA se verificó en navegador contra el servicio instalado, inyectando el token igual que WebView2: muestra `v3.0.0 · motor local`, `Modo aprendizaje`, KPI `Bloqueos / cuarentenas = 0 / 0`, etiquetas `Servicio SCM: sí`, `Sin pérdida de eventos: sí` y el nombre del servicio en el estado del motor. Durante esa comprobación apareció y se corrigió un `ReferenceError` (`TOKEN` en lugar de `token`) que impedía la carga inicial de datos. No hubo errores de página ni respuestas HTTP ≥ 400 en el contexto de la SPA; el capturador de pantalla no se pudo inspeccionar visualmente con este modelo, por lo que la validación se apoyó en DOM y consola.
 
@@ -71,12 +71,12 @@ La SPA se verificó en navegador contra el servicio instalado, inyectando el tok
 - `deploy/Generate-Sbom.ps1` consulta `dotnet list package --include-transitive --format json` y genera un SPDX 2.3 con 50 paquetes (producto, dependencias de ejecución y dependencias de test marcadas como `DEV_DEPENDENCY_OF`). Las licencias se toman de los `.nuspec` reales de la caché NuGet; WebView2 se identifica como `BSD-3-Clause` y su texto se copia a `licenses/`.
 - `LICENSE` declara el código propietario, **todos los derechos reservados** y publicación solo para transparencia/verificación. `EULA-EVALUATION.md` concede una licencia limitada para probar el paquete firmado sin uso comercial; prohíbe distribuirlo, comercializarlo y modificar el código sin permiso escrito.
 - `finish.cmd` acepta opcionalmente `[INTELPACKAGEDIR]` e `[INTELKEYHASH]` (o las variables de entorno del mismo nombre) y `Register-Service.ps1` valida ambas antes de escribirlas en el entorno del SCM. Así el paquete firmado de la Fase 4 puede usarse también en una instalación gestionada.
-- Verificado con build Release sin advertencias, 127 tests y un ciclo aislado `install.cmd` → `finish.cmd`: servicio `Running`/`Auto`, `managedByScm=true`, `VERSION=3.0.0`, SBOM/avisos/licencias presentes, `intelStatus=verified:phase5-install`, 1 hash, 5 reglas y `droppedEvents=0`. La desinstalación limpió el servicio de prueba.
+- Verificado con build Release sin advertencias, 147 tests y un ciclo aislado `install.cmd` → `finish.cmd`: servicio `Running`/`Auto`, `managedByScm=true`, `VERSION=3.0.0`, SBOM/avisos/licencias presentes, `intelStatus=verified:phase5-install`, 1 hash, 5 reglas y `droppedEvents=0`. La desinstalación limpió el servicio de prueba.
 
 ### `dev/v3.0` · Fase 6 — benchmarks reproducibles en Release
 
 - `deploy/Measure-Aegis.ps1` mide ahora reposo y carga con la misma ejecución: configuración `Release` por defecto, arranque hasta `/healthz`, CPU, RAM, E/S del árbol de procesos, procesos del servicio y WebView2. `-LaunchUi` inicia la UI y cuenta sus WebView2 descendientes sin sumar su memoria a la del servicio; `-SkipLoad` omite la fase de escaneos.
-- La fase de carga envía peticiones reales y autenticadas a `POST /api/scan` con ficheros sintéticos no ejecutables creados y borrados por el propio script. Registra latencia media/p95/máxima, throughput, veredictos, deltas de contadores y profundidad de colas. Si no hay `ui-token`, informa del motivo y no inventa latencias.
+- La fase de carga envía peticiones reales a `POST /api/scan` con ficheros sintéticos no ejecutables creados y borrados por el propio script. Registra latencia media/p95/máxima, throughput, veredictos, deltas de contadores y profundidad de colas. Si el servicio no responde, informa del motivo y no inventa latencias.
 - Medición real de 20 s en Release con UI: arranque 1323,1 ms; CPU media 0,3 % / máximo 3 %; RAM del servicio 84,47 MB de media / 87,84 MB de máxima; 21 escaneos sin fallos con latencia media 29,36 ms, p95 49,93 ms y 32,529 escaneos/s; 6 procesos WebView2 con 401 MB medidos aparte; `droppedEvents=0` y colas a 0. No se comparan cifras con otros antivirus sin pruebas independientes reproducibles.
 - Nota de despliegue: el antivirus del equipo de desarrollo bloqueó la ruta exacta `deploy\Measure-Aegis.ps1` tras detectar un borrador con un patrón de script sospechoso. No se desactivó ni se modificó ese producto; el contenido final se publica en la ruta canónica del repositorio y se validó en este equipo con una copia temporal del mismo script.
 
@@ -88,6 +88,15 @@ La SPA se verificó en navegador contra el servicio instalado, inyectando el tok
 - Prueba aislada con certificado autofirmado temporal (`-AllowUntrustedTestSigner`, solo laboratorio): 64 ficheros verificados (6 propios, 21 de terceros, 37 datos), `VERSION` alterado rechazado, instalación y actualización con backup correctas y rollback que restauró el paquete anterior sin tocar `AEGIS_DATA_DIR`.
 - `Package-Release.ps1` agrupa la etapa en `AegisGuard-3.0.0-win-x64.zip` y añade un sello firmado con el SHA-256 del ZIP; `Verify-Archive.ps1` comprueba el sello y vuelve a verificar el contenido interior. El ZIP incluye la carpeta `deploy` con instalación, verificación, desinstalación y rollback, por lo que es autocontenido. En laboratorio, un ZIP modificado fue rechazado por diferencia de hash.
 - Los comandos completos y los límites de esta cadena están en [operaciones](docs/OPERACIONES.md) y [seguridad](docs/SEGURIDAD.md). No se desactiva ningún antivirus para firmar, instalar ni probar; la firma no incluye marca de tiempo RFC3161 y el pinning depende de la huella fijada por el administrador.
+
+### `dev/v3.0` · P0 — superficie administrativa verificable
+
+- Se eliminó `ui-token` y el middleware `Bearer`. La SPA no inyecta credenciales y la API HTTP solo ofrece lecturas y análisis; las rutas que gestionaban firewall, cuarentena y política ya no existen en HTTP.
+- Las operaciones sensibles pasan por `AegisBridge` → UAC → Named Pipe con ACL. El servicio verifica PID, SID, integridad (`TokenIntegrityLevel`), elevación (`TokenElevationType`) y pertenencia a Administradores/Interactivo desde el token real del proceso cliente; ningún atributo se toma del payload.
+- `PrivilegedOperationPolicy` exige elevación completa para las cinco operaciones sensibles. `PrivilegedIpcDispatcher` rechaza reglas `Allow` y reutiliza los gestores reales de política, cuarentena y firewall. Todos los intentos se registran en `privileged-audit.jsonl`.
+- `LocalFileAcl.RestrictTree` quita al usuario interactivo el acceso directo heredado a configuración, claves, historial y cuarentena; `finish.cmd` concede el directorio de estado solo a SYSTEM y administradores.
+- Correcciones durante la implementación: RIDs de integridad y valores de `TOKEN_ELEVATION_TYPE` alineados con `winnt.h`, orden correcto de `CheckTokenMembership`, duplicación del token primario con `TOKEN_DUPLICATE`, tolerancia a BOM en la trama IPC y comprobación de salud del instalador sin token.
+- Verificado con build Release sin advertencias, 147 tests y dos pruebas de humo aisladas: la API HTTP devuelve `405` para las cinco mutaciones retiradas y `200` para `/api/scan` sin crear `ui-token`; un cliente elevado real fue autorizado por la Named Pipe y su intento quedó en `privileged-audit.jsonl`, mientras una operación desconocida fue rechazada antes del despacho.
 
 **Límites honestos:** no es una protección absoluta; no incluye driver kernel, detección de inyección por callback de kernel ni sandbox de ejecución. No sustituye ni desactiva Microsoft Defender, Bitdefender u otros productos de seguridad. En una medición de control de 20 s en reposo tras la Fase 3 (24 núcleos lógicos, monitorización y WFP activos, compilación Debug) el servicio registró 81,8 MB de RAM media y 0,25 % de CPU media, con máximos puntuales de 84,6 MB y 2 % y `droppedEvents=0`. El método, la referencia anterior, la medición Release con carga y el JSON generado están en [benchmarks](docs/BENCHMARKS.md). Sin driver, la defensa de red depende de las reglas WFP disponibles. Esta versión no incluye canal de actualización automática de firmas: las reglas se entregan con el producto y funcionan sin Internet. Opcionalmente se puede aplicar un paquete local firmado con `deploy/Build-IntelPackage.ps1`, verificado antes de cargarse; no hay descarga remota ni actualización silenciosa.
 
@@ -132,26 +141,38 @@ dotnet run --project src/Aegis.UI/Aegis.UI.csproj
 
 Puesto: servicio local en `http://127.0.0.1:8787`.
 
-La SPA se sirve desde `src/Aegis.Service/wwwroot`. El token local se guarda en `%AEGIS_DATA_DIR%\ui-token` y WebView2 lo inyecta como `window.AEGIS_TOKEN`; nunca sale de `127.0.0.1`. Persiste entre arranques y solo se regenera si falta o está corrupto; en ese caso el archivo inválido se conserva como `ui-token.invalid-*` y la UI se recarga una vez para tomar la nueva credencial.
+La SPA se sirve desde `src/Aegis.Service/wwwroot` y no recibe credenciales: no hay `ui-token`, `window.AEGIS_TOKEN` ni cabeceras `Bearer`. WebView2 solo expone el objeto nativo `aegis` a ese origen; las operaciones sensibles se ejecutan en un proceso elevado mediante UAC y se envían por una Named Pipe con ACL. El nombre de la tubería se deriva del SID del usuario autorizado, por lo que no es configurable ni adivinable por otra sesión.
 
 ## API local
 
-Todas las rutas `/api` exigen `Authorization: Bearer <ui-token>` y solo aceptan `127.0.0.1` / `localhost`. `/healthz` es público y solo confirma que el proceso responde.
+La API HTTP escucha solo en `127.0.0.1:8787`, rechaza `Host` externos y cabeceras `Origin`/`Sec-Fetch-Site` cross-site, y sirve únicamente lecturas y análisis. `/healthz` es público y solo confirma que el proceso responde. No hay autenticación por token: quien pueda abrir una conexión local solo puede leer estado y analizar ficheros.
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
 | GET | `/healthz` | Comprobación pública (sin estado interno). |
-| GET | `/api/health` | Comprobación viva con token. |
+| GET | `/api/health` | Comprobación viva con versión. |
 | GET | `/api/status` | Estado, CPU, RAM, contadores y política. |
 | GET | `/api/events?limit=100&skip=0&severity=High&verdict=Block` | Observaciones recientes con filtros opcionales. |
 | GET | `/api/threats?limit=100&skip=0&severity=Critical` | Solo decisiones no `Allow`, con filtros opcionales. |
 | GET | `/api/quarantine` | Elementos en cuarentena. |
-| POST | `/api/quarantine/{id}/restore` | Restauración reversible. |
-| DELETE | `/api/quarantine/{id}` | Purgado definitivo. |
-| GET/POST/DELETE | `/api/firewall/rules` | Reglas WFP gestionadas. |
+| GET | `/api/firewall/rules` | Nombres de reglas WFP gestionadas. |
+| GET | `/api/firewall/stats` | Contadores de reglas activas (no paquetes bloqueados). |
 | GET | `/api/firewall/learned` | Conexiones vistas en modo aprendizaje. |
-| GET/PUT | `/api/settings` | Política de detección. |
+| GET | `/api/settings` | Política de detección. |
+| POST | `/api/selftest/eicar` | Prueba EICAR sin persistencia ni remediación. |
 | POST | `/api/scan` | Análisis manual de un fichero. |
+
+Las mutaciones ya **no** están en HTTP. Se atienden por IPC privilegiado (`AegisBridge` → Named Pipe → servicio), con identidad leída del token del proceso cliente, elevación completa, integridad alta, pertenencia al grupo Administradores y sesión interactiva:
+
+| Operación IPC | Efecto |
+| --- | --- |
+| `FirewallAddRule` | Crea una regla de **bloqueo** con prefijo `AEGIS Guard`; las reglas `Allow` se rechazan. |
+| `FirewallRemoveRule` | Elimina una regla gestionada por el producto. |
+| `QuarantineRestore` | Restaura un elemento verificando integridad y retira reglas huérfanas. |
+| `QuarantinePurge` | Purga definitiva y retira reglas huérfanas. |
+| `PolicyChange` | Valida y persiste la política, aplicando `maxEvents` en caliente. |
+
+Todos los intentos, incluidos los rechazados, se escriben en `privileged-audit.jsonl` con ACL restringida.
 
 ## Prueba EICAR segura
 

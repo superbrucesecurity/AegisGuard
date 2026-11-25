@@ -4,7 +4,8 @@
 
 ```
 Aegis.UI (WPF + WebView2)
-    │  HTTP local + bearer token
+    │  HTTP local (solo lecturas/análisis, sin credenciales)
+    │  host object 'aegis' → UAC → Named Pipe con ACL (mutaciones)
     ▼
 Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
     ├── MonitoringWorker (ETW, FileSystemWatcher, canarios)
@@ -16,10 +17,11 @@ Aegis.Service (ASP.NET Core, 127.0.0.1:8787)
     ├── QuarantineManager (AES-GCM + DPAPI)
     ├── FirewallManager (WFP COM)
     ├── EventStore (JSONL)
-    └── ApiTokenProvider + LocalFileAcl (ACL restringida)
+    ├── PrivilegedIpcServer + PrivilegedIpcDispatcher + PrivilegedAuditLog
+    └── LocalFileAcl (ACL restringida de estado, claves y cuarentena)
 ```
 
-No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto expuesto es el enlace local de loopback `127.0.0.1:8787`.
+No hay pasarela, cliente de inferencia ni salida HTTPS a servidores externos. El único puerto TCP expuesto es el enlace local de loopback `127.0.0.1:8787`; la superficie administrativa es una Named Pipe con nombre derivado del SID del usuario y ACL explícita. La UI no lee directamente archivos de estado: para eso usa la API local.
 
 En las instalaciones gestionadas, `Aegis.Service.exe` se ejecuta como servicio SCM `AegisGuardSvc` (`start= auto`, recuperación escalonada, proveedor de eventos con el mismo nombre). `UseWindowsService` conecta el ciclo de vida con stop/shutdown; `AegisProfilePaths` traduce el SID del usuario interactivo registrado por el instalador a sus carpetas Desktop/Documentos/Downloads, necesarias porque el perfil de `LocalSystem` no las contiene. Sin ese mapeo los watchers quedan degradados.
 
@@ -42,6 +44,14 @@ El análisis manual (`POST /api/scan`) sigue este mismo flujo y sí persiste el 
 - La confianza se deriva del número de evidencias locales; no es una probabilidad calibrada de un modelo.
 - En modo aprendizaje se conserva la decisión, pero `RemediationPolicy` impide la cuarentena y el bloqueo WFP salvo indicio verificado (hash en lista local o EICAR).
 - Las banderas no producidas por el monitor se ignoran: no existen pesos para capacidades no implementadas.
+
+## Superficie administrativa
+
+`AegisBridge` es el único objeto nativo expuesto al script de la SPA. No transporta credenciales: recibe la operación y su payload, y comprueba si el proceso UI está elevado. Si no lo está, relanza el mismo ejecutable con `Verb=runas`, pasa la solicitud codificada y espera una respuesta escrita por el proceso elevado con ACL que permite leer al solicitante original. El proceso elevado se identifica ante el servicio como un cliente interactivo, con integridad alta y token de administrador completo.
+
+`PrivilegedIpcServer` obtiene el PID del cliente con `GetNamedPipeClientProcessId`, abre su token con `OpenProcessToken` y lee `TokenUser`, `TokenIntegrityLevel` y `TokenElevationType`. La pertenencia a Administradores y al grupo Interactivo se comprueba con `CheckTokenMembership` sobre una copia de suplantación. Ningún valor susceptible de ser inventado por el cliente (SID, PID, integridad o elevación) se toma del payload: la autorización se calcula en el servicio. `PrivilegedOperationPolicy` exige elevación completa para las cinco operaciones sensibles; la SPA las enruta por IPC en lugar de HTTP, y el servicio ya no registra las rutas `POST/DELETE /api/firewall/rules`, `POST /api/quarantine/{id}/restore`, `DELETE /api/quarantine/{id}` ni `PUT /api/settings`.
+
+`PrivilegedIpcDispatcher` reutiliza los mismos componentes reales (`ConfigStore`, `RuntimeState`, `EventStore`, `QuarantineManager` y `FirewallManager`). Rechaza explícitamente reglas `Allow`: el producto solo crea reglas de bloqueo con prefijo propio. Cada intento se registra en `privileged-audit.jsonl`, con el resultado y los atributos de identidad verificados. Los límites son 64 KiB por solicitud y 256 KiB por respuesta, con una solicitud por conexión. Al arrancar, `LocalFileAcl.RestrictTree` retira el acceso directo del usuario interactivo heredado de versiones anteriores sobre configuración, claves, historial y cuarentena.
 
 ## Firewall
 

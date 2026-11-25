@@ -4,21 +4,23 @@
 
 El producto no usa claves de API, cuentas de usuario ni servicios de inferencia. No existen archivos de credenciales ni variables de entorno secretas. Toda la lógica de detección y decisión se ejecuta en el equipo.
 
-## Token local y protección de la API
+## Superficie HTTP y canal privilegiado
 
-- La UI recibe el token del archivo `ui-token`, inyectado por WebView2 en la página cargada.
-- El token local **no es efímero**: se conserva entre arranques. Solo se sustituye si falta, está truncado o no es Base64 de 32 bytes; el contenido inválido se copia a `ui-token.invalid-*` antes de sobrescribir el archivo de forma atómica.
-- El archivo `ui-token` se crea con ACL que solo concede acceso a SYSTEM, administradores, el usuario del servicio y, en instalaciones SCM, el SID del usuario interactivo registrado por `finish.cmd`. El usuario interactivo solo recibe lectura, suficiente para que WebView2 inyecte el token; si ya existía con permisos débiles, se repara automáticamente al cargarlo.
-- Escucha solo en loopback.
-- Middleware rechaza cualquier `Host` distinto de `127.0.0.1` / `localhost` / `[::1]`.
-- Authorization Bearer obligatoria para `/api`, comparada en tiempo constante sobre el hash de la cabecera y del token (sin filtrar longitud).
-- Si el servicio regenera el token mientras la UI está abierta, la SPA recarga una sola vez para que WebView2 vuelva a inyectarlo; un segundo `401` se informa sin bucle.
+- Ya no existe `ui-token`, `window.AEGIS_TOKEN` ni autenticación `Bearer`. La SPA no posee ninguna credencial que pueda ser leída por código inyectado en la página.
+- La API HTTP escucha solo en loopback y expone únicamente lecturas, estado y análisis. El middleware rechaza cualquier `Host` distinto de `127.0.0.1` / `localhost` / `[::1]`, así como cabeceras `Origin` o `Sec-Fetch-Site` que indiquen otro origen.
+- Las cinco mutaciones sensibles (reglas de firewall, restauración/purgado de cuarentena y cambio de política) no están registradas como rutas HTTP. Se atienden por una Named Pipe con DACL vacía inicial y accesos explícitos para SYSTEM, administradores y el SID del usuario autorizado; el nombre se deriva de ese SID y no es configurable.
+- El servicio identifica al proceso cliente desde el kernel de Windows: `GetNamedPipeClientProcessId`, apertura de su token y lectura de `TokenUser`, `TokenIntegrityLevel` y `TokenElevationType`. Comprueba también pertenencia a Administradores e Interactivo mediante `CheckTokenMembership` sobre una copia de suplantación. El payload no puede declarar ni alterar estos atributos.
+- Se exige elevación completa (`TokenElevationType.Full`), integridad alta y sesión interactiva para cualquier operación sensible. Un token limitado por UAC, un proceso en segundo plano o un cliente de integridad media se rechazan aunque el SID pertenezca a Administradores.
+- Si la UI no está elevada, solicita consentimiento UAC relanzándose con `runas`. El archivo de respuesta se crea con una ACL que solo permite al usuario solicitante original y al proceso elevado; no se reutiliza un archivo preexistente.
+- `PrivilegedIpcDispatcher` rechaza reglas `Allow`: solo se crean reglas de bloqueo con prefijo `AEGIS Guard`. No hay forma de conceder tráfico desde la interfaz ni desde HTTP.
+- Cada solicitud y cada rechazo se registran en `privileged-audit.jsonl` con PID, SID, integridad, elevación y motivo. El registro se rota a 2 MiB y conserva ACL restringida.
+- Límites: 64 KiB por solicitud, 256 KiB por respuesta y una solicitud por conexión, cerrada después de responder.
 - CSP restrictiva, `X-Frame-Options: DENY`, `nosniff` y `no-referrer`.
-- WebView2 sin DevTools, menú contextual, autoguardado de contraseñas, autocompletado, host objects ni mensajería web.
+- WebView2 sin DevTools, menú contextual, autoguardado de contraseñas, autocompletado ni mensajería web. Se habilita un único host object (`aegis`) y la navegación queda fijada a `http://127.0.0.1:8787`.
 
 ## Servicio SCM y privilegios
 
-`finish.cmd` registra `AegisGuardSvc` con `sc.exe`, inicio automático sin sesión y acciones de recuperación. El `binPath` apunta directamente a `Aegis.Service.exe`; las rutas de datos/reglas y el SID de la UI se pasan como variables de entorno del servicio en el registro del SCM, no como secretos: no hay claves ni cuentas. `UseWindowsService` atiende los controles de stop/shutdown y drena la cola antes de apagar. El registro de eventos usa el nombre del servicio como proveedor; la ACL del directorio de estado sigue restringida a SYSTEM, administradores, usuario del servicio y lectura para el usuario interactivo.
+`finish.cmd` registra `AegisGuardSvc` con `sc.exe`, inicio automático sin sesión y acciones de recuperación. El `binPath` apunta directamente a `Aegis.Service.exe`; las rutas de datos/reglas y el SID de la UI se pasan como variables de entorno del servicio en el registro del SCM, no como secretos: no hay claves ni cuentas. `UseWindowsService` atiende los controles de stop/shutdown y drena la cola antes de apagar. El registro de eventos usa el nombre del servicio como proveedor. La ACL del directorio de estado se restringe a SYSTEM, administradores y usuario del servicio: el usuario interactivo **no** tiene acceso directo a configuración, claves, historial ni cuarentena. `LocalFileAcl.RestrictTree` reaplica esa regla al arrancar para corregir ACL heredadas de versiones anteriores.
 
 Bajo `LocalSystem`, el watcher usa `AegisProfilePaths` para vigilar Desktop/Documentos/Downloads del usuario interactivo en lugar del perfil `systemprofile`; si no se puede resolver el SID, la falta de directorios se refleja en el estado real y no se finge cobertura.
 

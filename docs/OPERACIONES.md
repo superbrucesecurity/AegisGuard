@@ -3,22 +3,18 @@
 ## Verificación posterior a la instalación
 
 ```powershell
-$dataDir = if ($env:AEGIS_DATA_DIR) { $env:AEGIS_DATA_DIR } else { Join-Path $env:ProgramData 'AegisGuard' }
-$token = (Get-Content -LiteralPath (Join-Path $dataDir 'ui-token') -Raw).Trim()
-$h = @{ Authorization = "Bearer $token" }
-
 Invoke-RestMethod http://127.0.0.1:8787/healthz
-Invoke-RestMethod http://127.0.0.1:8787/api/health -Headers $h
-Invoke-RestMethod http://127.0.0.1:8787/api/status -Headers $h
+Invoke-RestMethod http://127.0.0.1:8787/api/health
+Invoke-RestMethod http://127.0.0.1:8787/api/status
 ```
 
-`healthz` es público y solo confirma que el proceso responde; el resto exige el token local. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección. `intelStatus` distingue `bundled`, `verified:<versión>` y `rejected:<motivo>`; un paquete rechazado no cambia por sí solo el estado de monitorización, pero deja la inteligencia opcional sin cargar y debe corregirse.
+`healthz` es público y solo confirma que el proceso responde; las rutas `/api` no exigen credenciales porque solo devuelven lecturas y análisis. No hay token local ni cabeceras `Bearer`. En `/api/status`, compruebe que `serviceRunning`, `managedByScm`, `serviceName`, `monitorActive`, `etwActive` y `firewallActive` reflejan el estado real del equipo; `protectionState` resume el modo (`protected`, `learning`, `limited` o `degraded`). En una instalación con `finish.cmd`, `managedByScm` debe ser `true` y `serviceName` debe coincidir con `AegisGuardSvc` (o el nombre pasado a `finish.cmd`). `blockedTotal` y `quarantinedTotal` son contadores independientes: el primero no son reglas WFP ni paquetes bloqueados. `coalescedEvents` cuenta duplicados suprimidos por la ventana de coalescencia; no es pérdida de visibilidad y no degrada el estado. Solo `droppedEvents`, `queueSaturated`, `watchersDegraded` o una cola con más de 30 s de antigüedad degradan la protección. `intelStatus` distingue `bundled`, `verified:<versión>` y `rejected:<motivo>`; un paquete rechazado no cambia por sí solo el estado de monitorización, pero deja la inteligencia opcional sin cargar y debe corregirse.
 
 El servicio se registra con `sc.exe create ... start= auto`, `binPath` directo al ejecutable y acciones de recuperación `restart/5000`, `restart/10000`, `restart/30000`. No usa `schtasks /SC ONLOGON`: el inicio no depende de que haya sesión. El evento de arranque y el apagado ordenado se escriben en el registro de eventos de Windows con el proveedor del nombre del servicio. `run-service.cmd` solo se conserva para diagnóstico manual.
 
-El token local persiste entre arranques y se guarda con permisos restringidos a SYSTEM, administradores y usuario del servicio. Si el archivo ya existía con una ACL débil, los permisos se reparan al cargarlo. Si está corrupto se conserva como `ui-token.invalid-*` y se genera uno nuevo; la UI se recarga una sola vez para volver a leerlo. Para invalidarlo deliberadamente, detenga el servicio y elimine `ui-token`.
+El acceso directo a `%AEGIS_DATA_DIR%` está restringido a SYSTEM, administradores y la cuenta de servicio; la UI interactiva no tiene permisos sobre ese árbol. Al arrancar se reparan las ACL heredadas de instalaciones anteriores, incluidas clave de canarios, configuración, reputación, historial y cuarentena.
 
-`PUT /api/settings` aplica `maxEvents` en caliente, sin reiniciar el servicio. El valor se valida antes de persistirse y el historial en memoria se recorta de inmediato.
+Los cambios de política se hacen desde la interfaz: WebView2 llama al objeto `aegis`, se solicita consentimiento UAC si hace falta y la operación `PolicyChange` llega al servicio por Named Pipe. El servicio valida la política, la persiste y aplica `maxEvents` en caliente sin reiniciar. `PUT /api/settings` ya no existe. Todos los intentos, autorizados o rechazados, quedan en `%AEGIS_DATA_DIR%\privileged-audit.jsonl`; revise ese archivo si una operación administrativa falla. Para diagnosticar la elevación, compruebe que la cuenta usada sea administrador real (no un token limitado) y que la sesión sea interactiva.
 
 ## Validación aislada del instalador
 

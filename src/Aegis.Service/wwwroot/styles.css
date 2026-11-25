@@ -191,6 +191,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .help-card h3 { margin: 10px 0 8px; }
 .help-card p { color: var(--muted); line-height: 1.6; font-size: 12px; margin: 0 0 14px; }
 .help-card .btn { align-self: flex-start; margin-top: auto; }
+.about-card { margin-top: 16px; }
+.about-summary { color: var(--muted); line-height: 1.6; font-size: 13px; margin: 12px 0 0; }
+.about-card .meta-list { margin: 16px 0 0; }
 .toast-region { position: fixed; right: 28px; top: 84px; z-index: 30; display: flex; flex-direction: column; gap: 8px; }
 .toast { min-width: 260px; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); font-size: 12px; animation: toastIn .25s ease both; }
 .toast.error { border-left-color: var(--danger); }

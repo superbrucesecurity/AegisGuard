@@ -152,8 +152,8 @@ Prueba aislada con certificado autofirmado temporal: se generaron los tres artef
 ## Cuarentena
 
 - Los elementos cifrados se guardan en `%AEGIS_DATA_DIR%\quarantine` (o `C:\ProgramData\AegisGuard\quarantine` si no se define la variable).
-- `POST /api/quarantine/{id}/restore` restituye el fichero, registra la acción y retira la regla WFP asociada.
-- `DELETE /api/quarantine/{id}` purga la copia; no es reversible y también retira la regla WFP asociada.
+- Operación IPC `QuarantineRestore` (a través de `AegisBridge` → Named Pipe, no HTTP): restituye el fichero, registra la acción y retira la regla WFP asociada.
+- Operación IPC `QuarantinePurge` (a través de `AegisBridge` → Named Pipe, no HTTP): purga la copia; no es reversible y también retira la regla WFP asociada.
 - Solo se aceptan rutas absolutas que pasen `PathPolicy.IsQuarantineSafe`; se rechazan raíces, rutas relativas y rutas del propio producto.
 
 ## Reglas

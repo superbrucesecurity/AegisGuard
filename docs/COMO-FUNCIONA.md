@@ -92,4 +92,4 @@ Los datos mostrados son reales: no hay valores de ejemplo ni controles decorativ
 - No promete detección absoluta; los umbrales están pendientes de calibrar con datos propios.
 - No realiza escaneos completos periódicos.
 
-La medición en reposo de 20 s dio 77,2 MB de RAM media y 0,05 % de CPU media (máximos puntuales: 78,6 MB y 1 %). El procedimiento está en [benchmarks](BENCHMARKS.md).
+La medición histórica del lote 2 (2026-11-24) dio 77,2 MB de RAM media y 0,05 % de CPU media (máximos puntuales: 78,6 MB y 1 %). La referencia vigente es la de Fase 6 en Release: 84,47 MB de RAM media del servicio, 0,3 % de CPU media y `droppedEvents=0`. El procedimiento y el resto de métricas están en [benchmarks](BENCHMARKS.md).

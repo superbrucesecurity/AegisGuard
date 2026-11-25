@@ -4,7 +4,8 @@
   // Las operaciones sensibles no se envían por HTTP: pasan por el objeto
   // nativo 'aegis', que exige elevación real. La SPA no posee credenciales.
   const privilegedRoutes = [
-    { method: 'POST', re: /^\/api\/firewall\/rules\/?$/, op: 'FirewallAddRule' },
+    { method: 'POST', re: /^\/api\/firewall\/rules\/?$/, op: 'FirewallAddRule',
+      payload: (_, body) => ({ spec: body }) },
     { method: 'DELETE', re: /^\/api\/firewall\/rules\/(.+)$/, op: 'FirewallRemoveRule',
       payload: m => ({ name: decodeURIComponent(m[1]) }) },
     { method: 'POST', re: /^\/api\/quarantine\/([^/]+)\/restore\/?$/, op: 'QuarantineRestore',

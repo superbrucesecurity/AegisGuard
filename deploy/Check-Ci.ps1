@@ -177,6 +177,8 @@ try {
             }
             throw "El servicio publicado no respondió $baseUrl/api/health en el puerto aislado $smokePort."
         }
+        Assert-True ($health.version -eq $version) `
+            "/api/health informó $($health.version); esperaba $version de Directory.Build.props."
 
         function Get-Api([string]$Path) {
             Invoke-RestMethod -UseBasicParsing ($baseUrl + $Path) -TimeoutSec 5

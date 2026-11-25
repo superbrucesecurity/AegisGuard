@@ -76,6 +76,7 @@ public class PrivilegedSecuritySurfaceTests
             .OrderBy(n => n)
             .ToArray();
         Assert.Equal(Enum.GetNames<PrivilegedOperation>().OrderBy(n => n).ToArray(), declared);
+        Assert.Matches(@"op:\s*'FirewallAddRule',\s*payload:\s*\(_\s*,\s*body\)\s*=>\s*\(\{\s*spec:\s*body\s*\}\)", script);
         Assert.Contains("Enum.TryParse<PrivilegedOperation>", bridge);
         Assert.DoesNotContain("UiOperation", bridge);
     }

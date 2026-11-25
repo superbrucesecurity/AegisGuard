@@ -195,7 +195,7 @@ app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
 app.MapGet("/api/health", () => Results.Ok(new
 {
     ok = true,
-    version = typeof(ScanRequest).Assembly.GetName().Version?.ToString(3) ?? "3.0.0"
+    version = typeof(ScanRequest).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"
 }));
 
 app.MapGet("/api/status", () => Results.Json(state.Snapshot(firewall.IsAvailable()), JsonDefaults.Options));
